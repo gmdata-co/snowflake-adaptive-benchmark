@@ -1,0 +1,43 @@
+-- $ID$
+-- TPC-H/TPC-R Suppliers Who Kept SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS Waiting Query (Q21)
+-- Functional Query Definition
+-- Approved February 1998
+select
+	s_name,
+	count(*) as numwait
+from
+	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
+	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l1,
+	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,
+	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION
+where
+	s_suppkey = l1.l_suppkey
+	and o_orderkey = l1.l_orderkey
+	and o_orderstatus = 'F'
+	and l1.l_receiptdate > l1.l_commitdate
+	and exists (
+		select
+			*
+		from
+			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l2
+		where
+			l2.l_orderkey = l1.l_orderkey
+			and l2.l_suppkey <> l1.l_suppkey
+	)
+	and not exists (
+		select
+			*
+		from
+			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l3
+		where
+			l3.l_orderkey = l1.l_orderkey
+			and l3.l_suppkey <> l1.l_suppkey
+			and l3.l_receiptdate > l3.l_commitdate
+	)
+	and s_nationkey = n_nationkey
+	and n_name = 'SAUDI ARABIA'
+group by
+	s_name
+order by
+	numwait desc,
+	s_name;

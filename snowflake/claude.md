@@ -1,0 +1,1 @@
+- use role `benchmark` for everything

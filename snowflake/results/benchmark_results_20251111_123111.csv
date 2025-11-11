@@ -1,0 +1,3 @@
+run_id,timestamp,platform,scenario,warehouse_name,warehouse_size,query_num,run_num,run_type,query_tag,query_id,execution_time_sec,rows_produced,error_message
+0acdfbfb-fc4a-4bd6-acb5-fefaa1597fae,2025-11-11T17:31:14.752255,snowflake,primary,BENCHMARK_WH_MEDIUM,MEDIUM,1,1,cold,tpch_sf100_primary_q01_run1,01c052fb-030f-b05a-0005-d8c3012d9566,4.307,0,
+0acdfbfb-fc4a-4bd6-acb5-fefaa1597fae,2025-11-11T17:34:21.613980,snowflake,primary,BENCHMARK_WH_MEDIUM,MEDIUM,1,2,warm,tpch_sf100_primary_q01_run2,01c052fe-030f-c6ce-0005-d8c3012de20a,6.495,0,
