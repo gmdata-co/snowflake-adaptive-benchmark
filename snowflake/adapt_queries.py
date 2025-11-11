@@ -200,12 +200,14 @@ def clean_query(query_text: str, query_num: int) -> str:
 def process_queries():
     """Process all TPC-H queries and save adapted versions."""
     queries_dir = Path("snowflake/queries")
+    original_dir = queries_dir / "original_queries"
+    adapted_dir = queries_dir / "adapted_queries"
 
     print("Adapting TPC-H queries for Snowflake...")
 
     for i in range(1, 23):
-        input_file = queries_dir / f"{i}.sql"
-        output_file = queries_dir / f"q{i:02d}.sql"
+        input_file = original_dir / f"{i}.sql"
+        output_file = adapted_dir / f"q{i:02d}.sql"
 
         if not input_file.exists():
             print(f"Warning: {input_file} not found, skipping...")
