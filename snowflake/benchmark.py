@@ -6,6 +6,7 @@ Executes TPC-H queries against Snowflake and logs performance metrics.
 """
 
 import csv
+import json
 import time
 import uuid
 from datetime import datetime
@@ -28,7 +29,7 @@ from config import (
     NUM_RUNS,
     NUM_QUERIES,
     COLD_START_DELAY,
-    QUERY_TAG_PATTERN,
+    APP_NAME,
     QUERIES_DIR,
     RESULTS_DIR,
     CSV_COLUMNS,
@@ -43,19 +44,23 @@ class SnowflakeBenchmark:
         self.connection_name = connection_name
         self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
         self.run_id = str(uuid.uuid4())
-        self.csv_file = RESULTS_DIR / f"benchmark_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self.csv_file = RESULTS_DIR / "benchmark_results.csv"
         self.csv_writer: Optional[csv.DictWriter] = None
         self.csv_handle = None
 
     def _load_connection_config(self, connection_name: str) -> dict:
         """Load connection configuration from ~/.snowflake/connections.toml"""
-        connections_file = Path.home() / '.snowflake' / 'connections.toml'
+        connections_file = Path.home() / ".snowflake" / "connections.toml"
         if not connections_file.exists():
-            raise FileNotFoundError(f"Snowflake connections file not found: {connections_file}")
+            raise FileNotFoundError(
+                f"Snowflake connections file not found: {connections_file}"
+            )
 
         config = toml.load(connections_file)
         if connection_name not in config:
-            raise ValueError(f"Connection '{connection_name}' not found in {connections_file}")
+            raise ValueError(
+                f"Connection '{connection_name}' not found in {connections_file}"
+            )
 
         return config[connection_name]
 
@@ -63,15 +68,13 @@ class SnowflakeBenchmark:
         """Load and decode the private key for JWT authentication."""
         with open(private_key_path, "rb") as key_file:
             private_key = serialization.load_pem_private_key(
-                key_file.read(),
-                password=None,
-                backend=default_backend()
+                key_file.read(), password=None, backend=default_backend()
             )
 
         return private_key.private_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
+            encryption_algorithm=serialization.NoEncryption(),
         )
 
     def connect(self):
@@ -83,18 +86,20 @@ class SnowflakeBenchmark:
 
         # Prepare connection parameters
         connect_params = {
-            'account': conn_config['account'],
-            'user': conn_config['user'],
-            'role': SNOWFLAKE_ROLE,
-            'database': SNOWFLAKE_DATABASE,
-            'schema': SNOWFLAKE_SCHEMA,
+            "account": conn_config["account"],
+            "user": conn_config["user"],
+            "role": SNOWFLAKE_ROLE,
+            "database": SNOWFLAKE_DATABASE,
+            "schema": SNOWFLAKE_SCHEMA,
         }
 
         # Handle JWT authentication if configured
-        if conn_config.get('authenticator') == 'SNOWFLAKE_JWT':
-            private_key_path = conn_config.get('private_key_path') or conn_config.get('private_key_file')
+        if conn_config.get("authenticator") == "SNOWFLAKE_JWT":
+            private_key_path = conn_config.get("private_key_path") or conn_config.get(
+                "private_key_file"
+            )
             if private_key_path:
-                connect_params['private_key'] = self._load_private_key(private_key_path)
+                connect_params["private_key"] = self._load_private_key(private_key_path)
 
         # Connect to Snowflake
         self.conn = snowflake.connector.connect(**connect_params)
@@ -111,7 +116,9 @@ class SnowflakeBenchmark:
             self.conn.close()
             print("✓ Disconnected from Snowflake")
 
-    def _execute(self, sql: str, async_exec: bool = False) -> snowflake.connector.cursor.SnowflakeCursor:
+    def _execute(
+        self, sql: str, async_exec: bool = False
+    ) -> snowflake.connector.cursor.SnowflakeCursor:
         """
         Execute SQL statement.
 
@@ -140,19 +147,24 @@ class SnowflakeBenchmark:
         if not query_file.exists():
             raise FileNotFoundError(f"Query file not found: {query_file}")
 
-        with open(query_file, 'r') as f:
+        with open(query_file, "r") as f:
             return f.read().strip()
 
-    def set_query_tag(self, query_tag: str):
-        """Set the query tag for the next query."""
-        self._execute(f"ALTER SESSION SET QUERY_TAG = '{query_tag}'")
+    def set_query_tag(self, query_tag: Dict[str, Any]):
+        """
+        Set the query tag for the next query.
+
+        Args:
+            query_tag: Dictionary to be serialized as JSON query tag
+        """
+        # Serialize the query tag to JSON
+        query_tag_json = json.dumps(query_tag)
+        # Escape single quotes for SQL by doubling them
+        query_tag_escaped = query_tag_json.replace("'", "''")
+        self._execute(f"ALTER SESSION SET QUERY_TAG = '{query_tag_escaped}'")
 
     def execute_query(
-        self,
-        query_num: int,
-        run_num: int,
-        warehouse_name: str,
-        warehouse_size: str
+        self, query_num: int, run_num: int, warehouse_name: str, warehouse_size: str
     ) -> Dict[str, Any]:
         """
         Execute a single TPC-H query and capture metrics.
@@ -167,9 +179,19 @@ class SnowflakeBenchmark:
             Dictionary with query execution metrics
         """
         run_type = "cold" if run_num == 1 else "warm"
-        query_tag = QUERY_TAG_PATTERN.format(query_num=query_num, run_num=run_num)
 
-        print(f"  [{run_type:4s}] Run {run_num}/4: Query {query_num:2d}", end=" ", flush=True)
+        # Create JSON structured query tag
+        query_tag = {
+            "app": APP_NAME,
+            "workload_id": f"q{query_num:02d}",
+            "run_id": self.run_id,
+        }
+
+        print(
+            f"  [{run_type:4s}] Run {run_num}/4: Query {query_num:2d}",
+            end=" ",
+            flush=True,
+        )
 
         # Load query SQL
         try:
@@ -177,8 +199,13 @@ class SnowflakeBenchmark:
         except FileNotFoundError as e:
             print(f"✗ Error: {e}")
             return self._create_error_result(
-                query_num, run_num, run_type, query_tag,
-                warehouse_name, warehouse_size, str(e)
+                query_num,
+                run_num,
+                run_type,
+                json.dumps(query_tag),
+                warehouse_name,
+                warehouse_size,
+                str(e),
             )
 
         # Set query tag
@@ -203,7 +230,11 @@ class SnowflakeBenchmark:
             # Get results
             result_cursor = self.conn.cursor(DictCursor)
             result_cursor.get_results_from_sfqid(query_id)
-            rows_produced = result_cursor.rowcount if result_cursor.rowcount and result_cursor.rowcount > 0 else 0
+            rows_produced = (
+                result_cursor.rowcount
+                if result_cursor.rowcount and result_cursor.rowcount > 0
+                else 0
+            )
 
         except Exception as e:
             error_message = str(e)
@@ -216,20 +247,20 @@ class SnowflakeBenchmark:
 
         # Create result record
         result = {
-            'run_id': self.run_id,
-            'timestamp': timestamp,
-            'platform': 'snowflake',
-            'scenario': 'primary',
-            'warehouse_name': warehouse_name,
-            'warehouse_size': warehouse_size,
-            'query_num': query_num,
-            'run_num': run_num,
-            'run_type': run_type,
-            'query_tag': query_tag,
-            'query_id': query_id or '',
-            'execution_time_sec': round(execution_time, 3),
-            'rows_produced': rows_produced,
-            'error_message': error_message or '',
+            "run_id": self.run_id,
+            "timestamp": timestamp,
+            "platform": "snowflake",
+            "scenario": "primary",
+            "warehouse_name": warehouse_name,
+            "warehouse_size": warehouse_size,
+            "query_num": query_num,
+            "run_num": run_num,
+            "run_type": run_type,
+            "query_tag": json.dumps(query_tag),  # Store as JSON string in CSV
+            "query_id": query_id or "",
+            "execution_time_sec": round(execution_time, 3),
+            "rows_produced": rows_produced,
+            "error_message": error_message or "",
         }
 
         # Log to CSV immediately
@@ -238,33 +269,45 @@ class SnowflakeBenchmark:
         return result
 
     def _create_error_result(
-        self, query_num: int, run_num: int, run_type: str, query_tag: str,
-        warehouse_name: str, warehouse_size: str, error_message: str
+        self,
+        query_num: int,
+        run_num: int,
+        run_type: str,
+        query_tag: str,
+        warehouse_name: str,
+        warehouse_size: str,
+        error_message: str,
     ) -> Dict[str, Any]:
         """Create a result dictionary for an error case."""
         return {
-            'run_id': self.run_id,
-            'timestamp': datetime.utcnow().isoformat(),
-            'platform': 'snowflake',
-            'scenario': 'primary',
-            'warehouse_name': warehouse_name,
-            'warehouse_size': warehouse_size,
-            'query_num': query_num,
-            'run_num': run_num,
-            'run_type': run_type,
-            'query_tag': query_tag,
-            'query_id': '',
-            'execution_time_sec': 0.0,
-            'rows_produced': 0,
-            'error_message': error_message,
+            "run_id": self.run_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "platform": "snowflake",
+            "scenario": "primary",
+            "warehouse_name": warehouse_name,
+            "warehouse_size": warehouse_size,
+            "query_num": query_num,
+            "run_num": run_num,
+            "run_type": run_type,
+            "query_tag": query_tag,
+            "query_id": "",
+            "execution_time_sec": 0.0,
+            "rows_produced": 0,
+            "error_message": error_message,
         }
 
     def _init_csv(self):
-        """Initialize CSV file for results."""
-        self.csv_handle = open(self.csv_file, 'w', newline='')
+        """Initialize CSV file for results - append mode or create new with headers."""
+        file_exists = self.csv_file.exists()
+        self.csv_handle = open(self.csv_file, "a", newline="")
         self.csv_writer = csv.DictWriter(self.csv_handle, fieldnames=CSV_COLUMNS)
-        self.csv_writer.writeheader()
-        print(f"✓ Results will be logged to: {self.csv_file}")
+
+        # Write header only if file is new
+        if not file_exists:
+            self.csv_writer.writeheader()
+            print(f"✓ Created new results file: {self.csv_file}")
+        else:
+            print(f"✓ Appending results to: {self.csv_file}")
 
     def _log_result(self, result: Dict[str, Any]):
         """Log a single result to CSV."""
@@ -281,7 +324,7 @@ class SnowflakeBenchmark:
         self,
         warehouse_sizes: list[str] = None,
         query_nums: list[int] = None,
-        num_runs: int = NUM_RUNS
+        num_runs: int = NUM_RUNS,
     ):
         """
         Run the complete benchmark.
@@ -324,12 +367,14 @@ class SnowflakeBenchmark:
                             query_num=query_num,
                             run_num=run_num,
                             warehouse_name=warehouse_name,
-                            warehouse_size=warehouse_size.upper()
+                            warehouse_size=warehouse_size.upper(),
                         )
 
                         # If this was the first (cold) run, wait for warehouse to cool down
                         if run_num == 1 and run_num < num_runs:
-                            print(f"    Waiting {COLD_START_DELAY}s for warehouse cool-down...")
+                            print(
+                                f"    Waiting {COLD_START_DELAY}s for warehouse cool-down..."
+                            )
                             time.sleep(COLD_START_DELAY)
 
         finally:
@@ -347,29 +392,29 @@ class SnowflakeBenchmark:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description='Run Snowflake TPC-H Benchmark')
+    parser = argparse.ArgumentParser(description="Run Snowflake TPC-H Benchmark")
     parser.add_argument(
-        '--warehouse',
-        choices=['small', 'medium', 'xlarge'],
-        action='append',
-        help='Warehouse size(s) to test (can specify multiple times). Default: all'
+        "--warehouse",
+        choices=["small", "medium", "xlarge"],
+        action="append",
+        help="Warehouse size(s) to test (can specify multiple times). Default: all",
     )
     parser.add_argument(
-        '--queries',
+        "--queries",
         type=str,
-        help='Comma-separated list of query numbers to run (e.g., "1,3,5"). Default: all (1-22)'
+        help='Comma-separated list of query numbers to run (e.g., "1,3,5"). Default: all (1-22)',
     )
     parser.add_argument(
-        '--runs',
+        "--runs",
         type=int,
         default=NUM_RUNS,
-        help=f'Number of runs per query (default: {NUM_RUNS})'
+        help=f"Number of runs per query (default: {NUM_RUNS})",
     )
     parser.add_argument(
-        '--connection',
+        "--connection",
         type=str,
         default=SNOWFLAKE_CONNECTION,
-        help=f'Snowflake connection name (default: {SNOWFLAKE_CONNECTION})'
+        help=f"Snowflake connection name (default: {SNOWFLAKE_CONNECTION})",
     )
 
     args = parser.parse_args()
@@ -377,7 +422,7 @@ def main():
     # Parse query numbers
     query_nums = None
     if args.queries:
-        query_nums = [int(q.strip()) for q in args.queries.split(',')]
+        query_nums = [int(q.strip()) for q in args.queries.split(",")]
 
     # Run benchmark
     benchmark = SnowflakeBenchmark(connection_name=args.connection)
@@ -385,13 +430,11 @@ def main():
     try:
         benchmark.connect()
         benchmark.run_benchmark(
-            warehouse_sizes=args.warehouse,
-            query_nums=query_nums,
-            num_runs=args.runs
+            warehouse_sizes=args.warehouse, query_nums=query_nums, num_runs=args.runs
         )
     finally:
         benchmark.disconnect()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
