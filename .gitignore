@@ -1,0 +1,3 @@
+.venv/
+config.cpython-311.pyc
+snowflake/__pycache__/*
