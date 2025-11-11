@@ -11,7 +11,9 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 import argparse
 import toml
 
@@ -28,25 +30,37 @@ from config import (
     WAREHOUSES,
     NUM_RUNS,
     NUM_QUERIES,
-    COLD_START_DELAY,
     APP_NAME,
     QUERIES_DIR,
     RESULTS_DIR,
     CSV_COLUMNS,
 )
 
+# Global lock for thread-safe CSV writing
+csv_lock = Lock()
+
 
 class SnowflakeBenchmark:
     """Manages Snowflake TPC-H benchmark execution."""
 
-    def __init__(self, connection_name: str = SNOWFLAKE_CONNECTION):
-        """Initialize benchmark runner."""
+    def __init__(self, connection_name: str = SNOWFLAKE_CONNECTION, warehouse_size: str = None):
+        """Initialize benchmark runner.
+
+        Args:
+            connection_name: Name of connection from ~/.snowflake/connections.toml
+            warehouse_size: Specific warehouse size for this instance (e.g., "small", "medium", "xlarge")
+        """
         self.connection_name = connection_name
+        self.warehouse_size = warehouse_size
         self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
         self.run_id = str(uuid.uuid4())
         self.csv_file = RESULTS_DIR / "benchmark_results.csv"
         self.csv_writer: Optional[csv.DictWriter] = None
         self.csv_handle = None
+
+        # Track warehouse state for run type classification
+        self.warehouse_started = False  # True after first query executes
+        self.queries_executed: Set[int] = set()  # Set of query numbers that have been executed
 
     def _load_connection_config(self, connection_name: str) -> dict:
         """Load connection configuration from ~/.snowflake/connections.toml"""
@@ -178,7 +192,16 @@ class SnowflakeBenchmark:
         Returns:
             Dictionary with query execution metrics
         """
-        run_type = "cold" if run_num == 1 else "warm"
+        # Determine run type based on warehouse state
+        if not self.warehouse_started:
+            # First query on this warehouse = cold
+            run_type = "cold"
+        elif query_num not in self.queries_executed:
+            # Warehouse is running, but this query hasn't run yet = semi-warm
+            run_type = "semi-warm"
+        else:
+            # This query has already run on this warehouse = warm
+            run_type = "warm"
 
         # Create JSON structured query tag
         query_tag = {
@@ -188,7 +211,7 @@ class SnowflakeBenchmark:
         }
 
         print(
-            f"  [{run_type:4s}] Run {run_num}/4: Query {query_num:2d}",
+            f"  [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}",
             end=" ",
             flush=True,
         )
@@ -244,6 +267,9 @@ class SnowflakeBenchmark:
 
         if error_message is None:
             print(f"✓ {execution_time:.2f}s ({rows_produced:,} rows)")
+            # Mark warehouse as started and track this query
+            self.warehouse_started = True
+            self.queries_executed.add(query_num)
 
         # Create result record
         result = {
@@ -310,29 +336,88 @@ class SnowflakeBenchmark:
             print(f"✓ Appending results to: {self.csv_file}")
 
     def _log_result(self, result: Dict[str, Any]):
-        """Log a single result to CSV."""
+        """Log a single result to CSV (thread-safe)."""
         if self.csv_writer:
-            self.csv_writer.writerow(result)
-            self.csv_handle.flush()  # Flush immediately to ensure data is written
+            with csv_lock:
+                self.csv_writer.writerow(result)
+                self.csv_handle.flush()  # Flush immediately to ensure data is written
 
     def _close_csv(self):
         """Close CSV file."""
         if self.csv_handle:
             self.csv_handle.close()
 
+    def run_warehouse_benchmark(
+        self,
+        warehouse_size: str,
+        query_nums: list[int],
+        num_runs: int,
+    ) -> Dict[str, Any]:
+        """
+        Run benchmark for a single warehouse size.
+
+        This method is designed to run in a separate thread for parallel execution.
+
+        Args:
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
+            query_nums: List of query numbers to run
+            num_runs: Number of runs per query
+
+        Returns:
+            Dictionary with execution summary
+        """
+        warehouse_name = WAREHOUSES[warehouse_size]
+
+        print(f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}")
+
+        try:
+            # Switch to this warehouse
+            self.switch_warehouse(warehouse_name)
+
+            # Execute all queries
+            for query_num in query_nums:
+                for run_num in range(1, num_runs + 1):
+                    # Execute query (run_type is determined automatically)
+                    self.execute_query(
+                        query_num=query_num,
+                        run_num=run_num,
+                        warehouse_name=warehouse_name,
+                        warehouse_size=warehouse_size.upper(),
+                    )
+
+            print(f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}")
+
+            return {
+                "warehouse_size": warehouse_size,
+                "warehouse_name": warehouse_name,
+                "queries_completed": len(query_nums) * num_runs,
+                "success": True,
+            }
+
+        except Exception as e:
+            print(f"\n[{warehouse_size.upper()}] ✗ Error: {e}")
+            return {
+                "warehouse_size": warehouse_size,
+                "warehouse_name": warehouse_name,
+                "success": False,
+                "error": str(e),
+            }
+
     def run_benchmark(
         self,
         warehouse_sizes: list[str] = None,
         query_nums: list[int] = None,
         num_runs: int = NUM_RUNS,
+        parallel: bool = True,
     ):
         """
-        Run the complete benchmark.
+        Run the complete benchmark across multiple warehouse sizes.
 
         Args:
             warehouse_sizes: List of warehouse sizes to test (default: all)
             query_nums: List of query numbers to run (default: all 1-22)
             num_runs: Number of runs per query (default: 4)
+            parallel: If True, run warehouses in parallel (default: True)
         """
         # Default to all warehouses and queries if not specified
         if warehouse_sizes is None:
@@ -346,39 +431,75 @@ class SnowflakeBenchmark:
         print(f"Run ID: {self.run_id}")
         print(f"Warehouses: {', '.join(warehouse_sizes)}")
         print(f"Queries: {len(query_nums)} queries")
-        print(f"Runs per query: {num_runs} (1 cold + {num_runs - 1} warm)")
+        print(f"Runs per query: {num_runs}")
+        print(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
+        print(f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}")
         print("=" * 70)
 
         self._init_csv()
 
-        try:
+        if not parallel:
+            # Sequential execution (original behavior, but without cold start delay)
+            try:
+                for warehouse_size in warehouse_sizes:
+                    self.run_warehouse_benchmark(warehouse_size, query_nums, num_runs)
+            finally:
+                self._close_csv()
+        else:
+            # Parallel execution across warehouses
+            print("\n🚀 Launching parallel execution across all warehouses...")
+
+            # Create separate benchmark instances for each warehouse
+            # Each needs its own connection but shares the same CSV file
+            benchmark_instances = {}
             for warehouse_size in warehouse_sizes:
-                warehouse_name = WAREHOUSES[warehouse_size]
-                self.switch_warehouse(warehouse_name)
+                instance = SnowflakeBenchmark(
+                    connection_name=self.connection_name,
+                    warehouse_size=warehouse_size
+                )
+                instance.run_id = self.run_id  # Share the same run_id
+                instance.csv_file = self.csv_file  # Share the same CSV file
+                benchmark_instances[warehouse_size] = instance
 
-                print(f"\n{'=' * 70}")
-                print(f"Testing warehouse: {warehouse_size.upper()} ({warehouse_name})")
-                print(f"{'=' * 70}")
+            try:
+                # Connect all instances
+                for warehouse_size, instance in benchmark_instances.items():
+                    instance.connect()
+                    instance._init_csv()
 
-                for query_num in query_nums:
-                    for run_num in range(1, num_runs + 1):
-                        # Execute query
-                        self.execute_query(
-                            query_num=query_num,
-                            run_num=run_num,
-                            warehouse_name=warehouse_name,
-                            warehouse_size=warehouse_size.upper(),
-                        )
+                # Use ThreadPoolExecutor to run warehouses in parallel
+                with ThreadPoolExecutor(max_workers=len(warehouse_sizes)) as executor:
+                    # Submit all warehouse benchmarks
+                    future_to_warehouse = {
+                        executor.submit(
+                            instance.run_warehouse_benchmark,
+                            warehouse_size,
+                            query_nums,
+                            num_runs
+                        ): warehouse_size
+                        for warehouse_size, instance in benchmark_instances.items()
+                    }
 
-                        # If this was the first (cold) run, wait for warehouse to cool down
-                        if run_num == 1 and run_num < num_runs:
-                            print(
-                                f"    Waiting {COLD_START_DELAY}s for warehouse cool-down..."
-                            )
-                            time.sleep(COLD_START_DELAY)
+                    # Wait for completion and collect results
+                    results = {}
+                    for future in as_completed(future_to_warehouse):
+                        warehouse_size = future_to_warehouse[future]
+                        try:
+                            result = future.result()
+                            results[warehouse_size] = result
+                        except Exception as e:
+                            print(f"\n✗ Exception in {warehouse_size} warehouse: {e}")
+                            results[warehouse_size] = {
+                                "warehouse_size": warehouse_size,
+                                "success": False,
+                                "error": str(e),
+                            }
 
-        finally:
-            self._close_csv()
+            finally:
+                # Disconnect and close all instances
+                for instance in benchmark_instances.values():
+                    instance._close_csv()
+                    instance.disconnect()
 
         print("\n" + "=" * 70)
         print("BENCHMARK COMPLETE")
@@ -386,7 +507,7 @@ class SnowflakeBenchmark:
         print(f"Results saved to: {self.csv_file}")
         print(f"Run ID: {self.run_id}")
         print("\nNext steps:")
-        print(f"1. Wait {45} minutes for ACCOUNT_USAGE to populate")
+        print(f"1. Wait 45 minutes for ACCOUNT_USAGE to populate")
         print(f"2. Run: uv run snowflake/enrich_results.py {self.csv_file}")
 
 
@@ -416,6 +537,11 @@ def main():
         default=SNOWFLAKE_CONNECTION,
         help=f"Snowflake connection name (default: {SNOWFLAKE_CONNECTION})",
     )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Run warehouses sequentially instead of in parallel (default: parallel)",
+    )
 
     args = parser.parse_args()
 
@@ -428,12 +554,26 @@ def main():
     benchmark = SnowflakeBenchmark(connection_name=args.connection)
 
     try:
-        benchmark.connect()
-        benchmark.run_benchmark(
-            warehouse_sizes=args.warehouse, query_nums=query_nums, num_runs=args.runs
-        )
+        if not args.sequential:
+            # Parallel mode - don't connect main instance, it will create separate instances
+            benchmark.run_benchmark(
+                warehouse_sizes=args.warehouse,
+                query_nums=query_nums,
+                num_runs=args.runs,
+                parallel=True
+            )
+        else:
+            # Sequential mode - connect and run on main instance
+            benchmark.connect()
+            benchmark.run_benchmark(
+                warehouse_sizes=args.warehouse,
+                query_nums=query_nums,
+                num_runs=args.runs,
+                parallel=False
+            )
     finally:
-        benchmark.disconnect()
+        if args.sequential:
+            benchmark.disconnect()
 
 
 if __name__ == "__main__":
