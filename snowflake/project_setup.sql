@@ -92,6 +92,8 @@ GRANT ALL ON WAREHOUSE BENCHMARK_WH_XLARGE TO ROLE BENCHMARK;
 use role accountadmin;
 GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE_SAMPLE_DATA TO ROLE BENCHMARK;
 
+GRANT IMPORTED PRIVILEGES ON DATABASE snowflake TO ROLE BENCHMARK;
+
 -- ============================================================================
 -- Setup Complete
 -- ============================================================================
