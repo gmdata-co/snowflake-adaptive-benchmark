@@ -27,9 +27,8 @@ snowflake/
 │   ├── q01.sql
 │   ├── q02.sql
 │   └── ...
-└── results/                  # Benchmark results (CSV files)
-    ├── benchmark_results_YYYYMMDD_HHMMSS.csv
-    └── benchmark_results_YYYYMMDD_HHMMSS_enriched.csv
+└── results/                  # Benchmark results
+    └── benchmark_results.csv # Single CSV with all benchmark runs
 ```
 
 ## Setup
@@ -127,9 +126,13 @@ uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2
 
 ## Understanding the Results
 
-### Immediate Results
+### Benchmark Results File
 
-The benchmark creates a CSV file in `results/` with the following columns:
+All benchmark runs are logged to a single CSV file at `snowflake/results/benchmark_results.csv`. Each benchmark execution appends new rows to this file, making it easy to track results over time.
+
+### Columns in Results File
+
+The results file contains the following columns:
 
 | Column | Description |
 |--------|-------------|
@@ -148,23 +151,26 @@ The benchmark creates a CSV file in `results/` with the following columns:
 | `rows_produced` | Number of rows returned (from enrichment) |
 | `error_message` | Any error that occurred (empty if successful) |
 
-### Enriched Results
+### Enriching Results with ACCOUNT_USAGE Data
 
-After waiting **45+ minutes** for `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY` to populate, enrich the results with detailed metrics:
+After waiting **45+ minutes** for `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY` to populate, enrich the results with detailed metrics from Snowflake's internal monitoring:
 
 ```bash
-uv run snowflake/enrich_results.py snowflake/results/benchmark_results_YYYYMMDD_HHMMSS.csv
+uv run snowflake/enrich_results.py snowflake/results/benchmark_results.csv
 ```
 
-This adds the following columns from ACCOUNT_USAGE:
+**Note:** The enrichment script uses `BENCHMARK_WH_MEDIUM` to query the ACCOUNT_USAGE views. Ensure the BENCHMARK role has the necessary privileges on the SNOWFLAKE database (granted via IMPORTED PRIVILEGES).
+
+This command updates the results file **in-place** by adding the following columns from ACCOUNT_USAGE for any rows that haven't been enriched yet:
 
 - `compilation_time_ms` - Query compilation time
 - `queued_time_ms` - Time spent queued
 - `bytes_scanned` - Bytes scanned during execution
 - `credits_used_cloud_services` - Cloud services credits consumed
+- `credits_used_compute` - Compute credits consumed
 - `total_elapsed_time_ms` - Total elapsed time (from Snowflake)
 
-The enriched file is saved as `*_enriched.csv` in the same directory.
+The enrichment script is idempotent - it only enriches rows that don't already have enrichment data, so you can safely run it multiple times. This is useful if you run additional benchmarks and want to enrich the new results.
 
 ## Query Tagging
 

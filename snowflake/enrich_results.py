@@ -92,6 +92,11 @@ class ResultsEnricher:
         # Connect to Snowflake
         self.conn = snowflake.connector.connect(**connect_params)
 
+        # Set warehouse for querying ACCOUNT_USAGE
+        cursor = self.conn.cursor()
+        cursor.execute("USE WAREHOUSE BENCHMARK_WH_MEDIUM")
+        cursor.close()
+
         print("✓ Connected to Snowflake")
 
     def disconnect(self):
@@ -170,7 +175,10 @@ class ResultsEnricher:
                 "  This may be normal if less than 45 minutes have passed since execution"
             )
 
-        return pd.DataFrame(results)
+        # Convert to DataFrame and normalize column names to lowercase
+        df = pd.DataFrame(results)
+        df.columns = df.columns.str.lower()
+        return df
 
     def enrich_results(
         self, results_df: pd.DataFrame, history_df: pd.DataFrame
