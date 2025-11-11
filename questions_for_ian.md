@@ -1,0 +1,3 @@
+- most of the queries run in 10 seconds on a medium. (100GB data) Should we use SF1000 (1TB) instead? Would be more expensive...
+
+- Suggestion: Do a Small and Medium test on 100GB and XL on 1TB data?
