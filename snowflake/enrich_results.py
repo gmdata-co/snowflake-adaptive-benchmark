@@ -237,7 +237,8 @@ class ResultsEnricher:
         print(f"\nSaving enriched results to: {output_file}")
 
         # Use all columns present in the dataframe
-        enriched_df.to_csv(output_file, index=False)
+        # Use float_format to prevent scientific notation for small numbers
+        enriched_df.to_csv(output_file, index=False, float_format='%.10f')
 
         print(f"✓ Saved enriched results ({len(enriched_df)} rows)")
 
