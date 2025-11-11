@@ -28,7 +28,7 @@ APP_NAME = "tpchbenchmark"
 
 # Directories
 BASE_DIR = Path(__file__).parent
-QUERIES_DIR = BASE_DIR / "queries"
+QUERIES_DIR = BASE_DIR / "queries" / "adapted_queries"
 RESULTS_DIR = BASE_DIR / "results"
 
 # Ensure results directory exists
