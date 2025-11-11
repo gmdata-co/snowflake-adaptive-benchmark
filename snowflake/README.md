@@ -174,18 +174,42 @@ The enrichment script is idempotent - it only enriches rows that don't already h
 
 ## Query Tagging
 
-All queries are tagged using the pattern: `tpch_sf100_primary_q{##}_run{#}`
+All queries are tagged using a JSON structure for better filtering and analysis:
 
-Examples:
-- `tpch_sf100_primary_q01_run1` - Query 1, first (cold) run
-- `tpch_sf100_primary_q22_run4` - Query 22, fourth (warm) run
+```json
+{
+  "app": "tpchbenchmark",
+  "workload_id": "q01",
+  "run_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
 
-This allows easy filtering in Snowflake's query history:
+Fields:
+
+- `app`: Application name ("tpchbenchmark")
+- `workload_id`: Query identifier (e.g., "q01" for Query 1)
+- `run_id`: UUID for the entire benchmark session
+
+This allows flexible filtering in Snowflake's query history:
 
 ```sql
+-- Find all queries from a specific benchmark run
 SELECT *
 FROM snowflake.account_usage.query_history
-WHERE query_tag LIKE 'tpch_sf100%'
+WHERE query_tag:run_id = '550e8400-e29b-41d4-a716-446655440000'
+ORDER BY start_time;
+
+-- Find all executions of a specific query
+SELECT *
+FROM snowflake.account_usage.query_history
+WHERE query_tag:app = 'tpchbenchmark'
+  AND query_tag:workload_id = 'q01'
+ORDER BY start_time;
+
+-- Find all benchmark queries
+SELECT *
+FROM snowflake.account_usage.query_history
+WHERE query_tag:app = 'tpchbenchmark'
 ORDER BY start_time;
 ```
 
