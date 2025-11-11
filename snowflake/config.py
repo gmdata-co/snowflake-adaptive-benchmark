@@ -18,9 +18,13 @@ WAREHOUSES = {
 }
 
 # Test parameters
-NUM_RUNS = 4  # 1 cold + 3 warm runs
+NUM_RUNS = 4  # Number of times to run each query
 NUM_QUERIES = 22  # All TPC-H queries
-COLD_START_DELAY = 180  # 3 minutes (in seconds) between cold runs
+
+# Run type definitions (for parallel warehouse execution):
+# - "cold": First query on a warehouse (warehouse just started/resumed)
+# - "semi-warm": Subsequent queries on same warehouse (warehouse running, but this query hasn't run yet)
+# - "warm": Re-running the same query (query has already executed on this warehouse)
 
 # Query tagging configuration
 # Using JSON structured tags for better queryability
@@ -44,7 +48,7 @@ CSV_COLUMNS = [
     "warehouse_size",  # "SMALL", "MEDIUM", or "XLARGE"
     "query_num",  # 1-22 (TPC-H query number)
     "run_num",  # 1-4 (iteration number)
-    "run_type",  # "cold" or "warm"
+    "run_type",  # "cold", "semi-warm", or "warm" (see below for definitions)
     "query_tag",  # JSON structured tag: {"app":"tpchbenchmark","workload_id":"q01","run_id":"uuid"}
     "query_id",  # Snowflake query ID (sfqid)
     "execution_time_sec",  # Total elapsed time (client-side measurement)
