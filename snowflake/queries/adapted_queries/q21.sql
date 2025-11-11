@@ -1,12 +1,11 @@
 -- $ID$
--- TPC-H/TPC-R Suppliers Who Kept SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS Waiting Query (Q21)
+-- TPC-H/TPC-R Suppliers Who Kept Orders Waiting Query (Q21)
 -- Functional Query Definition
 -- Approved February 1998
 select
 	s_name,
 	count(*) as numwait
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l1,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION
@@ -18,8 +17,7 @@ where
 	and exists (
 		select
 			*
-		from
-			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l2
+		from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l2
 		where
 			l2.l_orderkey = l1.l_orderkey
 			and l2.l_suppkey <> l1.l_suppkey
@@ -27,8 +25,7 @@ where
 	and not exists (
 		select
 			*
-		from
-			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l3
+		from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM l3
 		where
 			l3.l_orderkey = l1.l_orderkey
 			and l3.l_suppkey <> l1.l_suppkey

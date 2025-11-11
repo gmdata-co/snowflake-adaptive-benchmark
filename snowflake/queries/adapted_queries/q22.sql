@@ -9,28 +9,25 @@ select
 from
 	(
 		select
-			substring(c_phone from 1 for 2) as cntrycode,
+			SUBSTR(c_phone, 1, 2) as cntrycode,
 			c_acctbal
-		from
-			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER
+		from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER
 		where
-			substring(c_phone from 1 for 2) in
+			SUBSTR(c_phone, 1, 2) in
 				('13', '31', '23', '29', '30', '18', '17')
 			and c_acctbal > (
 				select
 					avg(c_acctbal)
-				from
-					SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER
+				from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER
 				where
 					c_acctbal > 0.00
-					and substring(c_phone from 1 for 2) in
+					and SUBSTR(c_phone, 1, 2) in
 						('13', '31', '23', '29', '30', '18', '17')
 			)
 			and not exists (
 				select
 					*
-				from
-					SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS
+				from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS
 				where
 					o_custkey = c_custkey
 			)

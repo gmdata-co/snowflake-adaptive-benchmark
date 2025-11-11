@@ -4,10 +4,9 @@
 -- Approved February 1998
 select
 	sum(l_extendedprice * l_discount) as revenue
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
 where
 	l_shipdate >= date '1994-01-01'
-	and l_shipdate < date '1994-01-01' + interval '1' year
+	and l_shipdate < date '1994-01-01' + INTERVAL '1 year'
 	and l_discount between 0.06 - 0.01 and 0.06 + 0.01
 	and l_quantity < 24;

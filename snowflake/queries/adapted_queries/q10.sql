@@ -11,8 +11,7 @@ select
 	c_address,
 	c_phone,
 	c_comment
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION
@@ -20,7 +19,7 @@ where
 	c_custkey = o_custkey
 	and l_orderkey = o_orderkey
 	and o_orderdate >= date '1993-10-01'
-	and o_orderdate < date '1993-10-01' + interval '3' month
+	and o_orderdate < date '1993-10-01' + INTERVAL '3 month'
 	and l_returnflag = 'R'
 	and c_nationkey = n_nationkey
 group by

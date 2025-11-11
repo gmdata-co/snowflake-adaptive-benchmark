@@ -1,12 +1,11 @@
 -- $ID$
--- TPC-H/TPC-R Local SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER Volume Query (Q5)
+-- TPC-H/TPC-R Local Supplier Volume Query (Q5)
 -- Functional Query Definition
 -- Approved February 1998
 select
 	n_name,
 	sum(l_extendedprice * (1 - l_discount)) as revenue
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
@@ -21,7 +20,7 @@ where
 	and n_regionkey = r_regionkey
 	and r_name = 'ASIA'
 	and o_orderdate >= date '1994-01-01'
-	and o_orderdate < date '1994-01-01' + interval '1' year
+	and o_orderdate < date '1994-01-01' + INTERVAL '1 year'
 group by
 	n_name
 order by

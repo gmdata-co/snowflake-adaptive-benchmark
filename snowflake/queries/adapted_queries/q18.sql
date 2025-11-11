@@ -1,5 +1,5 @@
 -- $ID$
--- TPC-H/TPC-R Large Volume SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER Query (Q18)
+-- TPC-H/TPC-R Large Volume Customer Query (Q18)
 -- Function Query Definition
 -- Approved February 1998
 select
@@ -9,16 +9,14 @@ select
 	o_orderdate,
 	o_totalprice,
 	sum(l_quantity)
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
 where
 	o_orderkey in (
 		select
 			l_orderkey
-		from
-			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
+		from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
 		group by
 			l_orderkey having
 				sum(l_quantity) > 300

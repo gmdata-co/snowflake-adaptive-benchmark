@@ -5,7 +5,7 @@
 select
 	o_year,
 	sum(case
-		when SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION = 'BRAZIL' then volume
+		when nation = 'BRAZIL' then volume
 		else 0
 	end) / sum(volume) as mkt_share
 from
@@ -13,9 +13,8 @@ from
 		select
 			extract(year from o_orderdate) as o_year,
 			l_extendedprice * (1 - l_discount) as volume,
-			n2.n_name as SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION
-		from
-			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PART,
+			n2.n_name as nation
+		from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PART,
 			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
 			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM,
 			SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,

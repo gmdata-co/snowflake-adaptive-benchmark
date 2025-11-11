@@ -7,8 +7,7 @@ select
 	sum(l_extendedprice * (1 - l_discount)) as revenue,
 	o_orderdate,
 	o_shippriority
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
 where

@@ -13,10 +13,9 @@ select
 	avg(l_extendedprice) as avg_price,
 	avg(l_discount) as avg_disc,
 	count(*) as count_order
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
 where
-	l_shipdate <= date '1998-12-01' - interval '90 days'
+	l_shipdate <= date '1998-12-01' - INTERVAL '90 DAYS'
 group by
 	l_returnflag,
 	l_linestatus

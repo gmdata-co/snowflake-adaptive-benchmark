@@ -5,8 +5,7 @@
 select
 	ps_partkey,
 	sum(ps_supplycost * ps_availqty) as value
-from
-	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PARTSUPP,
+from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PARTSUPP,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
 	SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION
 where
@@ -18,8 +17,7 @@ group by
 		sum(ps_supplycost * ps_availqty) > (
 			select
 				sum(ps_supplycost * ps_availqty) * 0.0001
-			from
-				SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PARTSUPP,
+			from SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PARTSUPP,
 				SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER,
 				SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION
 			where
