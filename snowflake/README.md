@@ -21,6 +21,7 @@ snowflake/
 ├── config.py                 # Configuration constants
 ├── benchmark.py              # Main benchmark execution script
 ├── enrich_results.py         # Post-run enrichment from ACCOUNT_USAGE
+├── clear_results.py          # Safely clear benchmark results
 ├── adapt_queries.py          # Query adaptation script (already run)
 ├── project_setup.sql         # Snowflake setup SQL
 ├── queries/                  # TPC-H queries (q01.sql - q22.sql)
@@ -28,7 +29,8 @@ snowflake/
 │   ├── q02.sql
 │   └── ...
 └── results/                  # Benchmark results
-    └── benchmark_results.csv # Single CSV with all benchmark runs
+    ├── benchmark_results.csv # Single CSV with all benchmark runs
+    └── backups/              # Automatic backups when clearing data
 ```
 
 ## Setup
@@ -171,6 +173,47 @@ This command updates the results file **in-place** by adding the following colum
 - `total_elapsed_time_ms` - Total elapsed time (from Snowflake)
 
 The enrichment script is idempotent - it only enriches rows that don't already have enrichment data, so you can safely run it multiple times. This is useful if you run additional benchmarks and want to enrich the new results.
+
+## Managing Results
+
+### List All Runs
+
+View a summary of all benchmark runs in the results file:
+
+```bash
+uv run snowflake/clear_results.py --list
+```
+
+This displays:
+- Run ID and timestamp range
+- Platform and warehouses used
+- Number of queries and total executions
+- Enrichment status
+
+### Clear Results Data
+
+The `clear_results.py` script provides safe ways to clear benchmark data:
+
+**Clear all data (with automatic backup):**
+```bash
+uv run snowflake/clear_results.py --clear-all
+```
+
+**Clear specific run by run_id:**
+```bash
+uv run snowflake/clear_results.py --clear-run <run_id>
+```
+
+**Clear without creating backup (not recommended):**
+```bash
+uv run snowflake/clear_results.py --clear-all --no-backup
+```
+
+**Important Notes:**
+- By default, a timestamped backup is created in `results/backups/` before clearing
+- You must type "yes" to confirm deletion
+- The script shows exactly what will be deleted before confirming
+- Backups are named with timestamps: `benchmark_results_YYYYMMDD_HHMMSS.csv`
 
 ## Query Tagging
 
