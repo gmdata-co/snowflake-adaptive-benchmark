@@ -7,6 +7,7 @@ Executes TPC-H queries against Snowflake and logs performance metrics.
 
 import csv
 import json
+import logging
 import time
 import uuid
 from datetime import datetime
@@ -21,6 +22,14 @@ import snowflake.connector
 from snowflake.connector import DictCursor
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 from config import (
     SNOWFLAKE_CONNECTION,
@@ -93,7 +102,7 @@ class SnowflakeBenchmark:
 
     def connect(self):
         """Establish connection to Snowflake using the configured connection."""
-        print(f"Connecting to Snowflake using connection: {self.connection_name}")
+        logger.info(f"Connecting to Snowflake using connection: {self.connection_name}")
 
         # Load connection configuration from ~/.snowflake/connections.toml
         conn_config = self._load_connection_config(self.connection_name)
@@ -120,15 +129,15 @@ class SnowflakeBenchmark:
 
         # Disable result caching to ensure accurate benchmarking
         self._execute("ALTER SESSION SET USE_CACHED_RESULT = FALSE")
-        print("✓ Connected to Snowflake")
-        print(f"✓ Using role: {SNOWFLAKE_ROLE}")
-        print(f"✓ Database: {SNOWFLAKE_DATABASE}")
+        logger.info("✓ Connected to Snowflake")
+        logger.info(f"✓ Using role: {SNOWFLAKE_ROLE}")
+        logger.info(f"✓ Database: {SNOWFLAKE_DATABASE}")
 
     def disconnect(self):
         """Close Snowflake connection."""
         if self.conn:
             self.conn.close()
-            print("✓ Disconnected from Snowflake")
+            logger.info("✓ Disconnected from Snowflake")
 
     def _execute(
         self, sql: str, async_exec: bool = False
@@ -152,7 +161,7 @@ class SnowflakeBenchmark:
 
     def switch_warehouse(self, warehouse_name: str):
         """Switch to a different warehouse."""
-        print(f"\nSwitching to warehouse: {warehouse_name}")
+        # Don't print here - will be printed in run_warehouse_benchmark with proper context
         self._execute(f"USE WAREHOUSE {warehouse_name}")
 
     def load_query(self, query_num: int) -> str:
@@ -210,17 +219,16 @@ class SnowflakeBenchmark:
             "run_id": self.run_id,
         }
 
-        print(
-            f"  [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}",
-            end=" ",
-            flush=True,
-        )
+        # Include warehouse size in log output for clarity in parallel execution
+        wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
+        # Use logger but print without newline by constructing the message and printing later
+        log_prefix = f"{wh_prefix} [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}"
 
         # Load query SQL
         try:
             query_sql = self.load_query(query_num)
         except FileNotFoundError as e:
-            print(f"✗ Error: {e}")
+            logger.error(f"{log_prefix} ✗ Error: {e}")
             return self._create_error_result(
                 query_num,
                 run_num,
@@ -261,12 +269,12 @@ class SnowflakeBenchmark:
 
         except Exception as e:
             error_message = str(e)
-            print(f"✗ Error: {error_message[:50]}")
+            logger.error(f"{log_prefix} ✗ Error: {error_message[:50]}")
 
         execution_time = time.time() - start_time
 
         if error_message is None:
-            print(f"✓ {execution_time:.2f}s ({rows_produced:,} rows)")
+            logger.info(f"{log_prefix} ✓ {execution_time:.2f}s ({rows_produced:,} rows)")
             # Mark warehouse as started and track this query
             self.warehouse_started = True
             self.queries_executed.add(query_num)
@@ -331,9 +339,9 @@ class SnowflakeBenchmark:
         # Write header only if file is new
         if not file_exists:
             self.csv_writer.writeheader()
-            print(f"✓ Created new results file: {self.csv_file}")
+            logger.info(f"✓ Created new results file: {self.csv_file}")
         else:
-            print(f"✓ Appending results to: {self.csv_file}")
+            logger.info(f"✓ Appending results to: {self.csv_file}")
 
     def _log_result(self, result: Dict[str, Any]):
         """Log a single result to CSV (thread-safe)."""
@@ -368,7 +376,8 @@ class SnowflakeBenchmark:
         """
         warehouse_name = WAREHOUSES[warehouse_size]
 
-        print(f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}")
+        logger.info(f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}")
+        logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_name}")
 
         try:
             # Switch to this warehouse
@@ -385,7 +394,7 @@ class SnowflakeBenchmark:
                         warehouse_size=warehouse_size.upper(),
                     )
 
-            print(f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}")
+            logger.info(f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}")
 
             return {
                 "warehouse_size": warehouse_size,
@@ -395,7 +404,7 @@ class SnowflakeBenchmark:
             }
 
         except Exception as e:
-            print(f"\n[{warehouse_size.upper()}] ✗ Error: {e}")
+            logger.error(f"\n[{warehouse_size.upper()}] ✗ Error: {e}")
             return {
                 "warehouse_size": warehouse_size,
                 "warehouse_name": warehouse_name,
@@ -425,16 +434,16 @@ class SnowflakeBenchmark:
         if query_nums is None:
             query_nums = list(range(1, NUM_QUERIES + 1))
 
-        print("=" * 70)
-        print("SNOWFLAKE TPC-H BENCHMARK")
-        print("=" * 70)
-        print(f"Run ID: {self.run_id}")
-        print(f"Warehouses: {', '.join(warehouse_sizes)}")
-        print(f"Queries: {len(query_nums)} queries")
-        print(f"Runs per query: {num_runs}")
-        print(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
-        print(f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}")
-        print("=" * 70)
+        logger.info("=" * 70)
+        logger.info("SNOWFLAKE TPC-H BENCHMARK")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info(f"Queries: {len(query_nums)} queries")
+        logger.info(f"Runs per query: {num_runs}")
+        logger.info(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
+        logger.info(f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}")
+        logger.info("=" * 70)
 
         self._init_csv()
 
@@ -447,7 +456,7 @@ class SnowflakeBenchmark:
                 self._close_csv()
         else:
             # Parallel execution across warehouses
-            print("\n🚀 Launching parallel execution across all warehouses...")
+            logger.info("\n🚀 Launching parallel execution across all warehouses...")
 
             # Create separate benchmark instances for each warehouse
             # Each needs its own connection but shares the same CSV file
@@ -488,7 +497,7 @@ class SnowflakeBenchmark:
                             result = future.result()
                             results[warehouse_size] = result
                         except Exception as e:
-                            print(f"\n✗ Exception in {warehouse_size} warehouse: {e}")
+                            logger.error(f"\n✗ Exception in {warehouse_size} warehouse: {e}")
                             results[warehouse_size] = {
                                 "warehouse_size": warehouse_size,
                                 "success": False,
@@ -501,14 +510,14 @@ class SnowflakeBenchmark:
                     instance._close_csv()
                     instance.disconnect()
 
-        print("\n" + "=" * 70)
-        print("BENCHMARK COMPLETE")
-        print("=" * 70)
-        print(f"Results saved to: {self.csv_file}")
-        print(f"Run ID: {self.run_id}")
-        print("\nNext steps:")
-        print(f"1. Wait 45 minutes for ACCOUNT_USAGE to populate")
-        print(f"2. Run: uv run snowflake/enrich_results.py {self.csv_file}")
+        logger.info("\n" + "=" * 70)
+        logger.info("BENCHMARK COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {self.csv_file}")
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info("\nNext steps:")
+        logger.info(f"1. Wait 45 minutes for ACCOUNT_USAGE to populate")
+        logger.info(f"2. Run: uv run snowflake/enrich_results.py {self.csv_file}")
 
 
 def main():

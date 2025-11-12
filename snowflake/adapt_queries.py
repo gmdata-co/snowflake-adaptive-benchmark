@@ -6,8 +6,17 @@ Adapt TPC-H queries for Snowflake.
 - Update table references to use SNOWFLAKE_SAMPLE_DATA.TPCH_SF100
 """
 
+import logging
 import re
 from pathlib import Path
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 # Parameter substitutions based on TPC-H specification defaults
 # These are standard substitution values used in TPC-H benchmarking
@@ -203,14 +212,14 @@ def process_queries():
     original_dir = queries_dir / "original_queries"
     adapted_dir = queries_dir / "adapted_queries"
 
-    print("Adapting TPC-H queries for Snowflake...")
+    logger.info("Adapting TPC-H queries for Snowflake...")
 
     for i in range(1, 23):
         input_file = original_dir / f"{i}.sql"
         output_file = adapted_dir / f"q{i:02d}.sql"
 
         if not input_file.exists():
-            print(f"Warning: {input_file} not found, skipping...")
+            logger.warning(f"Warning: {input_file} not found, skipping...")
             continue
 
         # Read original query
@@ -225,9 +234,9 @@ def process_queries():
             f.write(adapted)
             f.write("\n")
 
-        print(f"  ✓ Query {i:2d} -> q{i:02d}.sql")
+        logger.info(f"  ✓ Query {i:2d} -> q{i:02d}.sql")
 
-    print("\nSuccessfully adapted 22 TPC-H queries!")
+    logger.info("\nSuccessfully adapted 22 TPC-H queries!")
 
 
 if __name__ == "__main__":
