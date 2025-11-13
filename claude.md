@@ -10,3 +10,4 @@
 - the goal is to create a python file that will run multiple queries against snowflake and databricks.
 - the overall project plan is at `project_plan.md`.
 - dbx is short for databricks.
+- run `source ~/.zshrc` to get the databricks credentials loaded.

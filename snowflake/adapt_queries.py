@@ -12,9 +12,7 @@ from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[logging.StreamHandler()]
+    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -50,7 +48,14 @@ QUERY_PARAMS = {
     },
     17: {":1": "Brand#23", ":2": "MED BOX"},
     18: {":1": "300"},
-    19: {":1": "Brand#12", ":2": "Brand#23", ":3": "Brand#34", ":4": "1", ":5": "10", ":6": "20"},
+    19: {
+        ":1": "Brand#12",
+        ":2": "Brand#23",
+        ":3": "Brand#34",
+        ":4": "1",
+        ":5": "10",
+        ":6": "20",
+    },
     20: {":1": "forest", ":2": "1994-01-01", ":3": "CANADA"},
     21: {":1": "SAUDI ARABIA"},
     22: {
@@ -94,7 +99,7 @@ def convert_q15_view_to_cte(query: str) -> str:
     create_match = re.search(
         r"create\s+view\s+(\w+)\s*\(([^)]+)\)\s+as\s+(.*?);\s*select",
         query,
-        flags=re.IGNORECASE | re.DOTALL
+        flags=re.IGNORECASE | re.DOTALL,
     )
 
     if not create_match:
@@ -106,9 +111,7 @@ def convert_q15_view_to_cte(query: str) -> str:
 
     # Extract the main SELECT query (everything between view creation and DROP)
     main_match = re.search(
-        r";\s*(select.*?);?\s*drop\s+view",
-        query,
-        flags=re.IGNORECASE | re.DOTALL
+        r";\s*(select.*?);?\s*drop\s+view", query, flags=re.IGNORECASE | re.DOTALL
     )
 
     if not main_match:
@@ -147,7 +150,9 @@ def clean_query(query_text: str, query_num: int) -> str:
     # Replace parameter placeholders with actual values
     # Sort by placeholder length (longest first) to avoid partial replacements
     if query_num in QUERY_PARAMS:
-        sorted_params = sorted(QUERY_PARAMS[query_num].items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_params = sorted(
+            QUERY_PARAMS[query_num].items(), key=lambda x: len(x[0]), reverse=True
+        )
         for placeholder, value in sorted_params:
             # Handle different placeholder patterns
             query = query.replace(f"'{placeholder}'", f"'{value}'")

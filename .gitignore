@@ -2,3 +2,4 @@
 config.cpython-311.pyc
 snowflake/__pycache__/*
 snowflake/results/backups/*
+__pycache__/*

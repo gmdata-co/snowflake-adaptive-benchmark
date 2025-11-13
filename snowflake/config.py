@@ -20,6 +20,7 @@ WAREHOUSES = {
 # Test parameters
 NUM_RUNS = 4  # Number of times to run each query
 NUM_QUERIES = 22  # All TPC-H queries
+SCALE_FACTOR = 100  # TPC-H scale factor (100 = 100GB, 1000 = 1TB)
 
 # Run type definitions (for parallel warehouse execution):
 # - "cold": First query on a warehouse (warehouse just started/resumed)

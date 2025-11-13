@@ -23,9 +23,7 @@ from cryptography.hazmat.primitives import serialization
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[logging.StreamHandler()]
+    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -148,7 +146,9 @@ class ResultsEnricher:
             logger.warning("Warning: No query IDs to fetch")
             return pd.DataFrame()
 
-        logger.info(f"\nQuerying ACCOUNT_USAGE.QUERY_HISTORY for {len(query_ids)} queries...")
+        logger.info(
+            f"\nQuerying ACCOUNT_USAGE.QUERY_HISTORY for {len(query_ids)} queries..."
+        )
 
         # Build query
         query_id_list = "', '".join(query_ids)
@@ -247,7 +247,7 @@ class ResultsEnricher:
 
         # Use all columns present in the dataframe
         # Use float_format to prevent scientific notation for small numbers
-        enriched_df.to_csv(output_file, index=False, float_format='%.10f')
+        enriched_df.to_csv(output_file, index=False, float_format="%.10f")
 
         logger.info(f"✓ Saved enriched results ({len(enriched_df)} rows)")
 

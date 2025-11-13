@@ -19,9 +19,7 @@ import pandas as pd
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[logging.StreamHandler()]
+    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -118,7 +116,7 @@ def clear_by_run_id(results_file: Path, run_id: str, backup: bool = True):
     df = pd.read_csv(results_file)
 
     # Filter by run_id
-    to_remove = df[df['run_id'] == run_id]
+    to_remove = df[df["run_id"] == run_id]
     row_count = len(to_remove)
 
     if row_count == 0:
@@ -127,7 +125,9 @@ def clear_by_run_id(results_file: Path, run_id: str, backup: bool = True):
 
     # Show what will be deleted
     logger.info(f"\nAbout to remove {row_count} rows with run_id: {run_id}")
-    logger.info(f"  Timestamp: {to_remove['timestamp'].min()} to {to_remove['timestamp'].max()}")
+    logger.info(
+        f"  Timestamp: {to_remove['timestamp'].min()} to {to_remove['timestamp'].max()}"
+    )
     logger.info(f"  Warehouses: {to_remove['warehouse_size'].unique().tolist()}")
     logger.info(f"  Queries: {sorted(to_remove['query_num'].unique().tolist())}")
 
@@ -145,7 +145,7 @@ def clear_by_run_id(results_file: Path, run_id: str, backup: bool = True):
         return
 
     # Remove rows
-    df_filtered = df[df['run_id'] != run_id]
+    df_filtered = df[df["run_id"] != run_id]
     df_filtered.to_csv(results_file, index=False)
     logger.info(f"✓ Removed {row_count} rows from {results_file}")
 
@@ -173,16 +173,20 @@ def list_runs(results_file: Path):
     logger.info("=" * 100)
 
     # Group by run_id
-    for run_id, group in df.groupby('run_id'):
+    for run_id, group in df.groupby("run_id"):
         logger.info(f"\nRun ID: {run_id}")
-        logger.info(f"  Timestamp: {group['timestamp'].min()} to {group['timestamp'].max()}")
+        logger.info(
+            f"  Timestamp: {group['timestamp'].min()} to {group['timestamp'].max()}"
+        )
         logger.info(f"  Platform: {group['platform'].iloc[0]}")
-        logger.info(f"  Warehouses: {', '.join(sorted(group['warehouse_size'].unique()))}")
+        logger.info(
+            f"  Warehouses: {', '.join(sorted(group['warehouse_size'].unique()))}"
+        )
         logger.info(f"  Queries: {len(group['query_num'].unique())} queries")
         logger.info(f"  Total executions: {len(group)}")
 
         # Check if enriched
-        enriched = group['compilation_time_ms'].notna().sum()
+        enriched = group["compilation_time_ms"].notna().sum()
         if enriched > 0:
             logger.info(f"  Enriched: {enriched}/{len(group)} rows")
 
@@ -209,39 +213,35 @@ Examples:
 
   # Clear without creating backup (not recommended)
   uv run snowflake/clear_results.py --clear-all --no-backup
-        """
+        """,
     )
 
     parser.add_argument(
         "--file",
         type=Path,
         default=RESULTS_FILE,
-        help=f"Path to results CSV file (default: {RESULTS_FILE})"
+        help=f"Path to results CSV file (default: {RESULTS_FILE})",
     )
 
     parser.add_argument(
-        "--list",
-        action="store_true",
-        help="List all runs in the results file"
+        "--list", action="store_true", help="List all runs in the results file"
     )
 
     parser.add_argument(
-        "--clear-all",
-        action="store_true",
-        help="Clear all data from the results file"
+        "--clear-all", action="store_true", help="Clear all data from the results file"
     )
 
     parser.add_argument(
         "--clear-run",
         type=str,
         metavar="RUN_ID",
-        help="Clear data for a specific run_id"
+        help="Clear data for a specific run_id",
     )
 
     parser.add_argument(
         "--no-backup",
         action="store_true",
-        help="Don't create a backup before clearing (not recommended)"
+        help="Don't create a backup before clearing (not recommended)",
     )
 
     args = parser.parse_args()

@@ -25,9 +25,7 @@ from cryptography.hazmat.primitives import serialization
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[logging.StreamHandler()]
+    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -39,6 +37,7 @@ from config import (
     WAREHOUSES,
     NUM_RUNS,
     NUM_QUERIES,
+    SCALE_FACTOR,
     APP_NAME,
     QUERIES_DIR,
     RESULTS_DIR,
@@ -52,15 +51,22 @@ csv_lock = Lock()
 class SnowflakeBenchmark:
     """Manages Snowflake TPC-H benchmark execution."""
 
-    def __init__(self, connection_name: str = SNOWFLAKE_CONNECTION, warehouse_size: str = None):
+    def __init__(
+        self,
+        connection_name: str = SNOWFLAKE_CONNECTION,
+        warehouse_size: str = None,
+        scale_factor: int = SCALE_FACTOR,
+    ):
         """Initialize benchmark runner.
 
         Args:
             connection_name: Name of connection from ~/.snowflake/connections.toml
             warehouse_size: Specific warehouse size for this instance (e.g., "small", "medium", "xlarge")
+            scale_factor: TPC-H scale factor (e.g., 100, 1000)
         """
         self.connection_name = connection_name
         self.warehouse_size = warehouse_size
+        self.scale_factor = scale_factor
         self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
         self.run_id = str(uuid.uuid4())
         self.csv_file = RESULTS_DIR / "benchmark_results.csv"
@@ -69,7 +75,9 @@ class SnowflakeBenchmark:
 
         # Track warehouse state for run type classification
         self.warehouse_started = False  # True after first query executes
-        self.queries_executed: Set[int] = set()  # Set of query numbers that have been executed
+        self.queries_executed: Set[int] = (
+            set()
+        )  # Set of query numbers that have been executed
 
     def _load_connection_config(self, connection_name: str) -> dict:
         """Load connection configuration from ~/.snowflake/connections.toml"""
@@ -165,13 +173,18 @@ class SnowflakeBenchmark:
         self._execute(f"USE WAREHOUSE {warehouse_name}")
 
     def load_query(self, query_num: int) -> str:
-        """Load TPC-H query from file."""
+        """Load TPC-H query from file and substitute the scale factor."""
         query_file = QUERIES_DIR / f"q{query_num:02d}.sql"
         if not query_file.exists():
             raise FileNotFoundError(f"Query file not found: {query_file}")
 
         with open(query_file, "r") as f:
-            return f.read().strip()
+            query_sql = f.read().strip()
+
+        # Replace the scale factor in the query (e.g., TPCH_SF100 -> TPCH_SF1000)
+        query_sql = query_sql.replace("TPCH_SF100", f"TPCH_SF{self.scale_factor}")
+
+        return query_sql
 
     def set_query_tag(self, query_tag: Dict[str, Any]):
         """
@@ -261,11 +274,10 @@ class SnowflakeBenchmark:
             # Get results
             result_cursor = self.conn.cursor(DictCursor)
             result_cursor.get_results_from_sfqid(query_id)
-            rows_produced = (
-                result_cursor.rowcount
-                if result_cursor.rowcount and result_cursor.rowcount > 0
-                else 0
-            )
+            # Fetch all results to get accurate row count
+            # Note: timing is already complete, so this doesn't affect metrics
+            results = result_cursor.fetchall()
+            rows_produced = len(results)
 
         except Exception as e:
             error_message = str(e)
@@ -274,7 +286,9 @@ class SnowflakeBenchmark:
         execution_time = time.time() - start_time
 
         if error_message is None:
-            logger.info(f"{log_prefix} ✓ {execution_time:.2f}s ({rows_produced:,} rows)")
+            logger.info(
+                f"{log_prefix} ✓ {execution_time:.2f}s ({rows_produced:,} rows)"
+            )
             # Mark warehouse as started and track this query
             self.warehouse_started = True
             self.queries_executed.add(query_num)
@@ -376,7 +390,9 @@ class SnowflakeBenchmark:
         """
         warehouse_name = WAREHOUSES[warehouse_size]
 
-        logger.info(f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}")
+        logger.info(
+            f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}"
+        )
         logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_name}")
 
         try:
@@ -394,7 +410,9 @@ class SnowflakeBenchmark:
                         warehouse_size=warehouse_size.upper(),
                     )
 
-            logger.info(f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}")
+            logger.info(
+                f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}"
+            )
 
             return {
                 "warehouse_size": warehouse_size,
@@ -438,11 +456,14 @@ class SnowflakeBenchmark:
         logger.info("SNOWFLAKE TPC-H BENCHMARK")
         logger.info("=" * 70)
         logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {len(query_nums)} queries")
         logger.info(f"Runs per query: {num_runs}")
         logger.info(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
-        logger.info(f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}")
+        logger.info(
+            f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}"
+        )
         logger.info("=" * 70)
 
         self._init_csv()
@@ -464,7 +485,8 @@ class SnowflakeBenchmark:
             for warehouse_size in warehouse_sizes:
                 instance = SnowflakeBenchmark(
                     connection_name=self.connection_name,
-                    warehouse_size=warehouse_size
+                    warehouse_size=warehouse_size,
+                    scale_factor=self.scale_factor,
                 )
                 instance.run_id = self.run_id  # Share the same run_id
                 instance.csv_file = self.csv_file  # Share the same CSV file
@@ -484,7 +506,7 @@ class SnowflakeBenchmark:
                             instance.run_warehouse_benchmark,
                             warehouse_size,
                             query_nums,
-                            num_runs
+                            num_runs,
                         ): warehouse_size
                         for warehouse_size, instance in benchmark_instances.items()
                     }
@@ -497,7 +519,9 @@ class SnowflakeBenchmark:
                             result = future.result()
                             results[warehouse_size] = result
                         except Exception as e:
-                            logger.error(f"\n✗ Exception in {warehouse_size} warehouse: {e}")
+                            logger.error(
+                                f"\n✗ Exception in {warehouse_size} warehouse: {e}"
+                            )
                             results[warehouse_size] = {
                                 "warehouse_size": warehouse_size,
                                 "success": False,
@@ -516,7 +540,7 @@ class SnowflakeBenchmark:
         logger.info(f"Results saved to: {self.csv_file}")
         logger.info(f"Run ID: {self.run_id}")
         logger.info("\nNext steps:")
-        logger.info(f"1. Wait 45 minutes for ACCOUNT_USAGE to populate")
+        logger.info("1. Wait 45 minutes for ACCOUNT_USAGE to populate")
         logger.info(f"2. Run: uv run snowflake/enrich_results.py {self.csv_file}")
 
 
@@ -551,6 +575,12 @@ def main():
         action="store_true",
         help="Run warehouses sequentially instead of in parallel (default: parallel)",
     )
+    parser.add_argument(
+        "--scale-factor",
+        type=int,
+        default=SCALE_FACTOR,
+        help=f"TPC-H scale factor (default: {SCALE_FACTOR}). Common values: 100 (100GB), 1000 (1TB), 10000 (10TB)",
+    )
 
     args = parser.parse_args()
 
@@ -560,7 +590,9 @@ def main():
         query_nums = [int(q.strip()) for q in args.queries.split(",")]
 
     # Run benchmark
-    benchmark = SnowflakeBenchmark(connection_name=args.connection)
+    benchmark = SnowflakeBenchmark(
+        connection_name=args.connection, scale_factor=args.scale_factor
+    )
 
     try:
         if not args.sequential:
@@ -569,7 +601,7 @@ def main():
                 warehouse_sizes=args.warehouse,
                 query_nums=query_nums,
                 num_runs=args.runs,
-                parallel=True
+                parallel=True,
             )
         else:
             # Sequential mode - connect and run on main instance
@@ -578,7 +610,7 @@ def main():
                 warehouse_sizes=args.warehouse,
                 query_nums=query_nums,
                 num_runs=args.runs,
-                parallel=False
+                parallel=False,
             )
     finally:
         if args.sequential:
