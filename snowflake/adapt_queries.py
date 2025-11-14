@@ -3,7 +3,7 @@
 Adapt TPC-H queries for Snowflake.
 - Remove qgen metadata lines (:x, :o, :n)
 - Replace parameter placeholders with actual values
-- Update table references to use SNOWFLAKE_SAMPLE_DATA.TPCH_SF100
+- Update table references to use SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000
 """
 
 import logging
@@ -71,14 +71,14 @@ QUERY_PARAMS = {
 
 # Table name mappings
 TABLE_MAPPINGS = {
-    "lineitem": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM",
-    "orders": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.ORDERS",
-    "customer": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.CUSTOMER",
-    "part": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PART",
-    "partsupp": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.PARTSUPP",
-    "supplier": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.SUPPLIER",
-    "nation": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.NATION",
-    "region": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.REGION",
+    "lineitem": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.LINEITEM",
+    "orders": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.ORDERS",
+    "customer": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.CUSTOMER",
+    "part": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.PART",
+    "partsupp": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.PARTSUPP",
+    "supplier": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.SUPPLIER",
+    "nation": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.NATION",
+    "region": "SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.REGION",
 }
 
 

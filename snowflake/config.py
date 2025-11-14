@@ -2,25 +2,39 @@
 Configuration for Snowflake TPC-H Benchmark
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Snowflake connection settings (from CLAUDE.md instructions)
-SNOWFLAKE_CONNECTION = "demo"
+# Load environment variables from .env file automatically
+load_dotenv()
+
+# Snowflake connection settings (from .env file via SNOWFLAKE_CONNECTION environment variable)
+SNOWFLAKE_CONNECTION = os.getenv("SNOWFLAKE_CONNECTION")
 SNOWFLAKE_ROLE = "BENCHMARK"
 SNOWFLAKE_DATABASE = "BENCHMARK"
 SNOWFLAKE_SCHEMA = "PUBLIC"
 
 # Warehouse configurations
-WAREHOUSES = {
-    "small": "BENCHMARK_WH_SMALL",
-    "medium": "BENCHMARK_WH_MEDIUM",
-    "xlarge": "BENCHMARK_WH_XLARGE",
+# Warehouses are created dynamically per benchmark run with run_id suffix
+# e.g., BENCHMARK_WH_MEDIUM_001 for run_id 001
+WAREHOUSE_SIZES = ["small", "medium", "xlarge"]
+WAREHOUSE_SIZE_MAP = {
+    "small": "SMALL",
+    "medium": "MEDIUM",
+    "xlarge": "XLARGE",
 }
+WAREHOUSE_PREFIX = "BENCHMARK_WH"
+
+# Warehouse settings for dynamic creation
+WAREHOUSE_AUTO_SUSPEND = 120  # 2 minutes
+WAREHOUSE_AUTO_RESUME = True
+WAREHOUSE_INITIALLY_SUSPENDED = True
 
 # Test parameters
 NUM_RUNS = 4  # Number of times to run each query
 NUM_QUERIES = 22  # All TPC-H queries
-SCALE_FACTOR = 100  # TPC-H scale factor (100 = 100GB, 1000 = 1TB)
+SCALE_FACTOR = 1000  # TPC-H scale factor (100 = 100GB, 1000 = 1TB)
 
 # Run type definitions (for parallel warehouse execution):
 # - "cold": First query on a warehouse (warehouse just started/resumed)

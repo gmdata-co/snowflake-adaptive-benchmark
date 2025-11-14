@@ -9,10 +9,9 @@ import csv
 import json
 import logging
 import time
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any, Set, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 import argparse
@@ -34,7 +33,12 @@ from config import (
     SNOWFLAKE_ROLE,
     SNOWFLAKE_DATABASE,
     SNOWFLAKE_SCHEMA,
-    WAREHOUSES,
+    WAREHOUSE_SIZES,
+    WAREHOUSE_SIZE_MAP,
+    WAREHOUSE_PREFIX,
+    WAREHOUSE_AUTO_SUSPEND,
+    WAREHOUSE_AUTO_RESUME,
+    WAREHOUSE_INITIALLY_SUSPENDED,
     NUM_RUNS,
     NUM_QUERIES,
     SCALE_FACTOR,
@@ -56,6 +60,7 @@ class SnowflakeBenchmark:
         connection_name: str = SNOWFLAKE_CONNECTION,
         warehouse_size: str = None,
         scale_factor: int = SCALE_FACTOR,
+        run_id: str = None,
     ):
         """Initialize benchmark runner.
 
@@ -63,15 +68,19 @@ class SnowflakeBenchmark:
             connection_name: Name of connection from ~/.snowflake/connections.toml
             warehouse_size: Specific warehouse size for this instance (e.g., "small", "medium", "xlarge")
             scale_factor: TPC-H scale factor (e.g., 100, 1000)
+            run_id: Optional run ID to use (for parallel instances)
         """
         self.connection_name = connection_name
         self.warehouse_size = warehouse_size
         self.scale_factor = scale_factor
         self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
-        self.run_id = str(uuid.uuid4())
         self.csv_file = RESULTS_DIR / "benchmark_results.csv"
         self.csv_writer: Optional[csv.DictWriter] = None
         self.csv_handle = None
+        self.run_id = run_id if run_id else self._get_next_run_id()
+
+        # Track warehouses created by this benchmark (for cleanup)
+        self.created_warehouses: List[str] = []
 
         # Track warehouse state for run type classification
         self.warehouse_started = False  # True after first query executes
@@ -107,6 +116,135 @@ class SnowflakeBenchmark:
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
+
+    def _get_next_run_id(self) -> str:
+        """
+        Get the next sequential run ID by reading existing CSV data.
+
+        Returns:
+            Zero-padded 3-digit run ID (e.g., "001", "002", "003")
+        """
+        if not self.csv_file.exists():
+            return "001"
+
+        max_run_id = 0
+        try:
+            with open(self.csv_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    run_id = row.get('run_id', '0')
+                    # Try to parse as integer (skip UUID format from old data)
+                    try:
+                        run_id_int = int(run_id)
+                        max_run_id = max(max_run_id, run_id_int)
+                    except ValueError:
+                        # Skip non-numeric run_ids (old UUID format)
+                        continue
+        except Exception as e:
+            logger.warning(f"Could not read existing run IDs: {e}. Starting from 001")
+            return "001"
+
+        next_run_id = max_run_id + 1
+        return f"{next_run_id:03d}"
+
+    def _get_warehouse_name(self, warehouse_size: str) -> str:
+        """
+        Generate warehouse name with run_id suffix.
+
+        Args:
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
+
+        Returns:
+            Full warehouse name (e.g., "BENCHMARK_WH_MEDIUM_001")
+        """
+        size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
+        return f"{WAREHOUSE_PREFIX}_{size_upper}_{self.run_id}"
+
+    def _create_warehouse(self, warehouse_size: str) -> str:
+        """
+        Create a warehouse for this benchmark run.
+
+        Args:
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
+
+        Returns:
+            Name of the created warehouse
+        """
+        warehouse_name = self._get_warehouse_name(warehouse_size)
+        size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
+
+        logger.info(f"Creating warehouse: {warehouse_name} (size: {size_upper})")
+
+        # Need to use SYSADMIN role to create warehouse
+        self._execute("USE ROLE SYSADMIN")
+
+        create_sql = f"""CREATE WAREHOUSE IF NOT EXISTS {warehouse_name}
+            WITH
+            WAREHOUSE_SIZE = '{size_upper}'
+            AUTO_SUSPEND = {WAREHOUSE_AUTO_SUSPEND}
+            AUTO_RESUME = {str(WAREHOUSE_AUTO_RESUME).upper()}
+            INITIALLY_SUSPENDED = {str(WAREHOUSE_INITIALLY_SUSPENDED).upper()}
+            COMMENT = 'Ephemeral warehouse for benchmark run {self.run_id}'"""
+
+        self._execute(create_sql)
+
+        # Grant all privileges to BENCHMARK role so it can use and drop the warehouse
+        grant_sql = f"GRANT ALL ON WAREHOUSE {warehouse_name} TO ROLE {SNOWFLAKE_ROLE}"
+        self._execute(grant_sql)
+
+        # Switch back to BENCHMARK role
+        self._execute(f"USE ROLE {SNOWFLAKE_ROLE}")
+
+        logger.info(f"✓ Created warehouse: {warehouse_name}")
+        self.created_warehouses.append(warehouse_name)
+
+        return warehouse_name
+
+    def _destroy_warehouse(self, warehouse_name: str):
+        """
+        Destroy a warehouse created by this benchmark.
+
+        Args:
+            warehouse_name: Name of warehouse to destroy
+        """
+        logger.info(f"Destroying warehouse: {warehouse_name}")
+
+        try:
+            drop_sql = f"DROP WAREHOUSE IF EXISTS {warehouse_name}"
+            self._execute(drop_sql)
+            logger.info(f"✓ Destroyed warehouse: {warehouse_name}")
+        except Exception as e:
+            logger.error(f"✗ Failed to destroy warehouse {warehouse_name}: {e}")
+
+    def _create_all_warehouses(self, warehouse_sizes: List[str]):
+        """
+        Create all warehouses needed for this benchmark run.
+
+        Args:
+            warehouse_sizes: List of warehouse size keys to create
+        """
+        logger.info("\n" + "=" * 70)
+        logger.info("CREATING WAREHOUSES")
+        logger.info("=" * 70)
+
+        for warehouse_size in warehouse_sizes:
+            self._create_warehouse(warehouse_size)
+
+        logger.info("=" * 70)
+
+    def _destroy_all_warehouses(self):
+        """Destroy all warehouses created by this benchmark run."""
+        if not self.created_warehouses:
+            return
+
+        logger.info("\n" + "=" * 70)
+        logger.info("CLEANING UP WAREHOUSES")
+        logger.info("=" * 70)
+
+        for warehouse_name in self.created_warehouses:
+            self._destroy_warehouse(warehouse_name)
+
+        logger.info("=" * 70)
 
     def connect(self):
         """Establish connection to Snowflake using the configured connection."""
@@ -388,7 +526,7 @@ class SnowflakeBenchmark:
         Returns:
             Dictionary with execution summary
         """
-        warehouse_name = WAREHOUSES[warehouse_size]
+        warehouse_name = self._get_warehouse_name(warehouse_size)
 
         logger.info(
             f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}"
@@ -448,7 +586,7 @@ class SnowflakeBenchmark:
         """
         # Default to all warehouses and queries if not specified
         if warehouse_sizes is None:
-            warehouse_sizes = list(WAREHOUSES.keys())
+            warehouse_sizes = WAREHOUSE_SIZES
         if query_nums is None:
             query_nums = list(range(1, NUM_QUERIES + 1))
 
@@ -466,73 +604,94 @@ class SnowflakeBenchmark:
         )
         logger.info("=" * 70)
 
+        # Connect to Snowflake first (needed for warehouse creation)
+        if not parallel:
+            self.connect()
+
         self._init_csv()
 
+        # Create warehouses after connection
         if not parallel:
-            # Sequential execution (original behavior, but without cold start delay)
-            try:
+            self._create_all_warehouses(warehouse_sizes)
+
+        try:
+            if not parallel:
+                # Sequential execution
                 for warehouse_size in warehouse_sizes:
                     self.run_warehouse_benchmark(warehouse_size, query_nums, num_runs)
-            finally:
+            else:
+                # Parallel execution across warehouses
+                logger.info("\n🚀 Launching parallel execution across all warehouses...")
+
+                # Connect the main instance first to create warehouses
+                self.connect()
+                self._create_all_warehouses(warehouse_sizes)
+
+                # Create separate benchmark instances for each warehouse
+                # Each needs its own connection but shares the same run_id and CSV file
+                benchmark_instances = {}
+                for warehouse_size in warehouse_sizes:
+                    instance = SnowflakeBenchmark(
+                        connection_name=self.connection_name,
+                        warehouse_size=warehouse_size,
+                        scale_factor=self.scale_factor,
+                        run_id=self.run_id,  # Share the same run_id
+                    )
+                    instance.csv_file = self.csv_file  # Share the same CSV file
+                    instance.created_warehouses = self.created_warehouses  # Share warehouse list
+                    benchmark_instances[warehouse_size] = instance
+
+                try:
+                    # Connect all instances
+                    for warehouse_size, instance in benchmark_instances.items():
+                        instance.connect()
+                        instance._init_csv()
+
+                    # Use ThreadPoolExecutor to run warehouses in parallel
+                    with ThreadPoolExecutor(max_workers=len(warehouse_sizes)) as executor:
+                        # Submit all warehouse benchmarks
+                        future_to_warehouse = {
+                            executor.submit(
+                                instance.run_warehouse_benchmark,
+                                warehouse_size,
+                                query_nums,
+                                num_runs,
+                            ): warehouse_size
+                            for warehouse_size, instance in benchmark_instances.items()
+                        }
+
+                        # Wait for completion and collect results
+                        results = {}
+                        for future in as_completed(future_to_warehouse):
+                            warehouse_size = future_to_warehouse[future]
+                            try:
+                                result = future.result()
+                                results[warehouse_size] = result
+                            except Exception as e:
+                                logger.error(
+                                    f"\n✗ Exception in {warehouse_size} warehouse: {e}"
+                                )
+                                results[warehouse_size] = {
+                                    "warehouse_size": warehouse_size,
+                                    "success": False,
+                                    "error": str(e),
+                                }
+
+                finally:
+                    # Disconnect and close all instances
+                    for instance in benchmark_instances.values():
+                        instance._close_csv()
+                        instance.disconnect()
+
+                    # Destroy warehouses before disconnecting main instance
+                    self._destroy_all_warehouses()
+                    self.disconnect()
+
+        finally:
+            # Always clean up warehouses (sequential mode only, parallel already handled)
+            if not parallel:
                 self._close_csv()
-        else:
-            # Parallel execution across warehouses
-            logger.info("\n🚀 Launching parallel execution across all warehouses...")
-
-            # Create separate benchmark instances for each warehouse
-            # Each needs its own connection but shares the same CSV file
-            benchmark_instances = {}
-            for warehouse_size in warehouse_sizes:
-                instance = SnowflakeBenchmark(
-                    connection_name=self.connection_name,
-                    warehouse_size=warehouse_size,
-                    scale_factor=self.scale_factor,
-                )
-                instance.run_id = self.run_id  # Share the same run_id
-                instance.csv_file = self.csv_file  # Share the same CSV file
-                benchmark_instances[warehouse_size] = instance
-
-            try:
-                # Connect all instances
-                for warehouse_size, instance in benchmark_instances.items():
-                    instance.connect()
-                    instance._init_csv()
-
-                # Use ThreadPoolExecutor to run warehouses in parallel
-                with ThreadPoolExecutor(max_workers=len(warehouse_sizes)) as executor:
-                    # Submit all warehouse benchmarks
-                    future_to_warehouse = {
-                        executor.submit(
-                            instance.run_warehouse_benchmark,
-                            warehouse_size,
-                            query_nums,
-                            num_runs,
-                        ): warehouse_size
-                        for warehouse_size, instance in benchmark_instances.items()
-                    }
-
-                    # Wait for completion and collect results
-                    results = {}
-                    for future in as_completed(future_to_warehouse):
-                        warehouse_size = future_to_warehouse[future]
-                        try:
-                            result = future.result()
-                            results[warehouse_size] = result
-                        except Exception as e:
-                            logger.error(
-                                f"\n✗ Exception in {warehouse_size} warehouse: {e}"
-                            )
-                            results[warehouse_size] = {
-                                "warehouse_size": warehouse_size,
-                                "success": False,
-                                "error": str(e),
-                            }
-
-            finally:
-                # Disconnect and close all instances
-                for instance in benchmark_instances.values():
-                    instance._close_csv()
-                    instance.disconnect()
+                self._destroy_all_warehouses()
 
         logger.info("\n" + "=" * 70)
         logger.info("BENCHMARK COMPLETE")

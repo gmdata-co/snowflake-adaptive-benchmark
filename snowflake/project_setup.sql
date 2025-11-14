@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Snowflake vs Databricks Benchmarking Project Setup
 -- ============================================================================
--- This script sets up the role, database, and warehouses for TPC-H SF100
+-- This script sets up the role, database, and warehouses for TPC-H SF1000
 -- benchmarking according to the project plan requirements.
 --
 -- Requirements:
@@ -20,7 +20,7 @@ USE ROLE accountadmin;
 
 -- Create the benchmark role
 CREATE ROLE IF NOT EXISTS BENCHMARK
-    COMMENT = 'Role for TPC-H SF100 benchmarking project';
+    COMMENT = 'Role for TPC-H SF1000 benchmarking project';
 
 -- Grant benchmark role to SYSADMIN for management
 GRANT ROLE BENCHMARK TO ROLE SYSADMIN;
@@ -34,7 +34,7 @@ USE ROLE SYSADMIN;
 
 -- Create the benchmark database
 CREATE DATABASE IF NOT EXISTS BENCHMARK
-    COMMENT = 'Database for Snowflake vs Databricks TPC-H SF100 benchmarking';
+    COMMENT = 'Database for Snowflake vs Databricks TPC-H SF1000 benchmarking';
 
 -- Grant all privileges on database to BENCHMARK role
 GRANT ALL ON DATABASE BENCHMARK TO ROLE BENCHMARK;
@@ -42,50 +42,31 @@ GRANT ALL ON DATABASE BENCHMARK TO ROLE BENCHMARK;
 
 
 -- ============================================================================
--- Step 3: Create Warehouses for Benchmarking
+-- Step 3: Warehouse Management (Dynamic Creation)
 -- ============================================================================
--- Based on project plan Section 5: Small, Medium, X-Large
--- All warehouses have 2-min auto-suspend per Section 4 requirements
--- ============================================================================
-
--- Warehouse 1: SMALL (Budget comparison)
-CREATE WAREHOUSE IF NOT EXISTS BENCHMARK_WH_SMALL
-    WITH
-    WAREHOUSE_SIZE = 'SMALL'
-    AUTO_SUSPEND = 120  -- 2 minutes
-    AUTO_RESUME = TRUE
-    INITIALLY_SUSPENDED = TRUE
-    COMMENT = 'Small warehouse for budget comparison (SF100 TPC-H)';
-
--- Warehouse 2: MEDIUM (Primary baseline)
-CREATE WAREHOUSE IF NOT EXISTS BENCHMARK_WH_MEDIUM
-    WITH
-    WAREHOUSE_SIZE = 'MEDIUM'
-    AUTO_SUSPEND = 120  -- 2 minutes
-    AUTO_RESUME = TRUE
-    INITIALLY_SUSPENDED = TRUE
-    COMMENT = 'Medium warehouse for primary baseline testing (SF100 TPC-H)';
-
--- Warehouse 3: X-LARGE (Performance ceiling)
-CREATE WAREHOUSE IF NOT EXISTS BENCHMARK_WH_XLARGE
-    WITH
-    WAREHOUSE_SIZE = 'X-LARGE'
-    AUTO_SUSPEND = 120  -- 2 minutes
-    AUTO_RESUME = TRUE
-    INITIALLY_SUSPENDED = TRUE
-    COMMENT = 'X-Large warehouse for performance ceiling testing (SF100 TPC-H)';
-
--- ============================================================================
--- Step 4: Grant Warehouse Permissions to BENCHMARK Role
+-- NOTE: Warehouses are now created dynamically by the benchmark script.
+--
+-- The benchmark script will:
+-- 1. Create warehouses on-the-fly with run_id suffix (e.g., BENCHMARK_WH_MEDIUM_001)
+-- 2. Use SYSADMIN role to create warehouses
+-- 3. Grant ALL privileges on warehouses to BENCHMARK role
+-- 4. Destroy warehouses at the end of the run for perfect cost attribution
+--
+-- Warehouse sizes used:
+-- - SMALL: Budget comparison
+-- - MEDIUM: Primary baseline
+-- - XLARGE: Performance ceiling
+--
+-- Warehouse settings:
+-- - AUTO_SUSPEND: 120 seconds (2 minutes)
+-- - AUTO_RESUME: TRUE
+-- - INITIALLY_SUSPENDED: TRUE
+--
+-- No manual warehouse creation is needed!
 -- ============================================================================
 
--- Grant all privileges on each warehouse to BENCHMARK role
-GRANT ALL ON WAREHOUSE BENCHMARK_WH_SMALL TO ROLE BENCHMARK;
-GRANT ALL ON WAREHOUSE BENCHMARK_WH_MEDIUM TO ROLE BENCHMARK;
-GRANT ALL ON WAREHOUSE BENCHMARK_WH_XLARGE TO ROLE BENCHMARK;
-
 -- ============================================================================
--- Step 5: Verify Access to Sample Data
+-- Step 4: Verify Access to Sample Data
 -- ============================================================================
 
 -- Grant usage on SNOWFLAKE_SAMPLE_DATA to BENCHMARK role
@@ -101,11 +82,7 @@ GRANT IMPORTED PRIVILEGES ON DATABASE snowflake TO ROLE BENCHMARK;
 -- Switch to BENCHMARK role to verify setup
 USE ROLE BENCHMARK;
 USE DATABASE BENCHMARK;
-USE WAREHOUSE BENCHMARK_WH_MEDIUM;
-
--- Verify access to TPC-H SF100 sample data
-SELECT COUNT(*) AS lineitem_row_count
-FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM;
 
 -- Display setup summary
-SELECT 'Setup complete. Ready for TPC-H SF100 benchmarking.' AS status;
+SELECT 'Setup complete. Ready for TPC-H benchmarking.' AS status;
+SELECT 'Note: Warehouses will be created automatically by the benchmark script.' AS note;

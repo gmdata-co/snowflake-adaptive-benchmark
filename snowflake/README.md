@@ -1,17 +1,18 @@
 # Snowflake TPC-H Benchmark
 
-This directory contains the Snowflake benchmarking setup for the TPC-H SF100 (100GB) dataset for comparison against Databricks.
+This directory contains the Snowflake benchmarking setup for TPC-H datasets for comparison against Databricks.
 
 ## Overview
 
-The benchmark executes all 22 TPC-H queries against Snowflake warehouses and logs detailed performance metrics for analysis and comparison.
+The benchmark executes all 22 TPC-H queries against Snowflake warehouses and logs detailed performance metrics for analysis and comparison. Warehouses are created dynamically for each benchmark run and destroyed afterward for perfect cost attribution.
 
 ## Prerequisites
 
-1. **Snowflake Account** with access to `SNOWFLAKE_SAMPLE_DATA.TPCH_SF100`
-2. **Snowflake CLI** configured with a connection named `demo` (or customize in config.py)
+1. **Snowflake Account** with access to `SNOWFLAKE_SAMPLE_DATA.TPCH_SF*` datasets
+2. **Snowflake CLI** configured with a connection (name specified in `.env` file's `SNOWFLAKE_CONNECTION` variable)
 3. **Python 3.11+** with `uv` package manager
-4. **Benchmark Setup** completed (warehouses and role created)
+4. **Benchmark Setup** completed (role and database created)
+5. **Environment configured** (copy `.env.example` to `.env` and update with your connection details)
 
 ## Project Structure
 
@@ -23,11 +24,13 @@ snowflake/
 ├── enrich_results.py         # Post-run enrichment from ACCOUNT_USAGE
 ├── clear_results.py          # Safely clear benchmark results
 ├── adapt_queries.py          # Query adaptation script (already run)
-├── project_setup.sql         # Snowflake setup SQL
+├── project_setup.sql         # Snowflake role/database setup
 ├── queries/                  # TPC-H queries (q01.sql - q22.sql)
-│   ├── q01.sql
-│   ├── q02.sql
-│   └── ...
+│   ├── adapted_queries/
+│   │   ├── q01.sql - q22.sql
+│   │   ├── QUERY_CATEGORIES.md
+│   │   └── README.md
+│   └── original_queries/
 └── results/                  # Benchmark results
     ├── benchmark_results.csv # Single CSV with all benchmark runs
     └── backups/              # Automatic backups when clearing data
@@ -37,21 +40,19 @@ snowflake/
 
 ### 1. Create Snowflake Resources
 
-Run the project setup to create the necessary role, database, and warehouses:
+Run the project setup to create the necessary role and database:
 
 ```bash
-snow sql --connection demo -f snowflake/project_setup.sql
+source .env  # Load connection name from environment
+snow sql --connection $SNOWFLAKE_CONNECTION -f snowflake/project_setup.sql
 ```
 
 This creates:
 - **Role**: `BENCHMARK`
 - **Database**: `BENCHMARK`
-- **Warehouses**:
-  - `BENCHMARK_WH_SMALL` (SMALL size)
-  - `BENCHMARK_WH_MEDIUM` (MEDIUM size)
-  - `BENCHMARK_WH_XLARGE` (X-LARGE size)
+- **Grants**: Access to `SNOWFLAKE_SAMPLE_DATA` and `SNOWFLAKE` database
 
-All warehouses have a 2-minute auto-suspend timeout.
+**Note:** Warehouses are **NOT** created manually. They are created automatically by the benchmark script with unique run IDs and destroyed afterward.
 
 ### 2. Install Dependencies
 
@@ -72,7 +73,14 @@ Run the complete benchmark (all 22 queries, 4 runs each, all warehouse sizes):
 uv run snowflake/benchmark.py
 ```
 
-This will take several hours to complete.
+This will:
+1. Generate a sequential run ID (001, 002, 003, etc.)
+2. Create warehouses with run ID suffix (e.g., `BENCHMARK_WH_MEDIUM_001`)
+3. Execute all queries across all warehouses
+4. Destroy warehouses at the end
+5. Save results to CSV
+
+The complete benchmark takes several hours to complete.
 
 ### Customize Benchmark Run
 
@@ -81,6 +89,8 @@ This will take several hours to complete.
 ```bash
 uv run snowflake/benchmark.py --warehouse medium
 ```
+
+This creates only `BENCHMARK_WH_MEDIUM_001` for the run.
 
 #### Test Specific Queries
 
@@ -99,11 +109,21 @@ uv run snowflake/benchmark.py --queries "1"
 uv run snowflake/benchmark.py --runs 2
 ```
 
+#### Change Scale Factor
+
+```bash
+# Use SF1000 (1TB dataset) instead of SF100 (100GB)
+uv run snowflake/benchmark.py --scale-factor 1000
+
+# Use SF10000 (10TB dataset)
+uv run snowflake/benchmark.py --scale-factor 10000
+```
+
 #### Combine Options
 
 ```bash
-# Test query 1 on medium warehouse with 2 runs
-uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2
+# Test query 1 on medium warehouse with 2 runs using SF1000
+uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2 --scale-factor 1000
 ```
 
 ### Command-Line Options
@@ -121,10 +141,53 @@ uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2
     Number of runs per query
     Default: 4 (1 cold + 3 warm runs)
 
+--scale-factor N
+    TPC-H scale factor (100 = 100GB, 1000 = 1TB, 10000 = 10TB)
+    Default: 100
+
 --connection NAME
     Snowflake connection name from ~/.snowflake/connections.toml
-    Default: demo
+    Default: value from SNOWFLAKE_CONNECTION environment variable (.env file)
+
+--sequential
+    Run warehouses sequentially instead of in parallel
+    Default: parallel execution
 ```
+
+## Dynamic Warehouse Management
+
+### How It Works
+
+The benchmark script implements **ephemeral warehouse creation** for perfect cost attribution:
+
+1. **Run ID Generation**: Sequential run IDs (001, 002, 003...) are generated from existing CSV data
+2. **Warehouse Creation**: Warehouses are created with run ID suffix (e.g., `BENCHMARK_WH_MEDIUM_001`)
+3. **Parallel Execution**: All warehouses for a run share the same run ID suffix
+4. **Automatic Cleanup**: Warehouses are destroyed automatically at the end (even if errors occur)
+
+### Benefits
+
+- **Perfect Cost Attribution**: Each run's costs are isolated to specific warehouses
+- **No Manual Cleanup**: Warehouses are destroyed automatically via try/finally
+- **Easy Cost Tracking**: Filter `warehouse_metering_history` by warehouse name pattern
+- **Multiple Concurrent Runs**: Different runs use different warehouses (001, 002, etc.)
+
+### Warehouse Naming Convention
+
+Format: `BENCHMARK_WH_{SIZE}_{RUN_ID}`
+
+Examples:
+- `BENCHMARK_WH_SMALL_001` - Small warehouse for run 001
+- `BENCHMARK_WH_MEDIUM_001` - Medium warehouse for run 001
+- `BENCHMARK_WH_XLARGE_001` - X-Large warehouse for run 001
+- `BENCHMARK_WH_MEDIUM_002` - Medium warehouse for run 002
+
+### Warehouse Settings
+
+All warehouses are created with:
+- **Auto-suspend**: 120 seconds (2 minutes)
+- **Auto-resume**: TRUE
+- **Initially suspended**: TRUE
 
 ## Understanding the Results
 
@@ -138,16 +201,16 @@ The results file contains the following columns:
 
 | Column | Description |
 |--------|-------------|
-| `run_id` | UUID for the entire benchmark session |
+| `run_id` | Sequential run ID (001, 002, 003...) |
 | `timestamp` | ISO 8601 timestamp when query was submitted |
 | `platform` | "snowflake" (for comparison with databricks) |
 | `scenario` | "primary" (sequential execution) |
-| `warehouse_name` | Full warehouse name (e.g., BENCHMARK_WH_MEDIUM) |
+| `warehouse_name` | Full warehouse name (e.g., BENCHMARK_WH_MEDIUM_001) |
 | `warehouse_size` | Size: SMALL, MEDIUM, or XLARGE |
 | `query_num` | Query number (1-22) |
 | `run_num` | Iteration number (1-4) |
 | `run_type` | "cold" (first run) or "warm" (subsequent runs) |
-| `query_tag` | Full tag like "tpch_sf100_primary_q01_run1" |
+| `query_tag` | JSON structured tag for filtering |
 | `query_id` | Snowflake query ID for ACCOUNT_USAGE lookup |
 | `execution_time_sec` | Total elapsed time (client-side measurement) |
 | `rows_produced` | Number of rows returned (from enrichment) |
@@ -160,8 +223,6 @@ After waiting **45+ minutes** for `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY` to pop
 ```bash
 uv run snowflake/enrich_results.py snowflake/results/benchmark_results.csv
 ```
-
-**Note:** The enrichment script uses `BENCHMARK_WH_MEDIUM` to query the ACCOUNT_USAGE views. Ensure the BENCHMARK role has the necessary privileges on the SNOWFLAKE database (granted via IMPORTED PRIVILEGES).
 
 This command updates the results file **in-place** by adding the following columns from ACCOUNT_USAGE for any rows that haven't been enriched yet:
 
@@ -201,7 +262,7 @@ uv run snowflake/clear_results.py --clear-all
 
 **Clear specific run by run_id:**
 ```bash
-uv run snowflake/clear_results.py --clear-run <run_id>
+uv run snowflake/clear_results.py --clear-run 001
 ```
 
 **Clear without creating backup (not recommended):**
@@ -223,7 +284,7 @@ All queries are tagged using a JSON structure for better filtering and analysis:
 {
   "app": "tpchbenchmark",
   "workload_id": "q01",
-  "run_id": "550e8400-e29b-41d4-a716-446655440000"
+  "run_id": "001"
 }
 ```
 
@@ -231,7 +292,7 @@ Fields:
 
 - `app`: Application name ("tpchbenchmark")
 - `workload_id`: Query identifier (e.g., "q01" for Query 1)
-- `run_id`: UUID for the entire benchmark session
+- `run_id`: Sequential run ID for the benchmark session
 
 This allows flexible filtering in Snowflake's query history:
 
@@ -239,7 +300,7 @@ This allows flexible filtering in Snowflake's query history:
 -- Find all queries from a specific benchmark run
 SELECT *
 FROM snowflake.account_usage.query_history
-WHERE query_tag:run_id = '550e8400-e29b-41d4-a716-446655440000'
+WHERE query_tag:run_id = '001'
 ORDER BY start_time;
 
 -- Find all executions of a specific query
@@ -260,19 +321,22 @@ ORDER BY start_time;
 
 The benchmark implements the following pattern:
 
-1. **Cold Run (run 1)**: First execution after warehouse cool-down
+1. **Cold Run (run 1)**: First execution after warehouse creation
    - Warehouse starts from suspended state
    - No cache available
-   - After execution, waits 180 seconds (3 minutes) for warehouse to suspend
+   - Classified as "cold" run type
 
 2. **Warm Runs (runs 2-4)**: Subsequent executions
    - Warehouse already running
    - May benefit from cache (result cache is disabled, but metadata cache is active)
+   - Classified as "warm" or "semi-warm" depending on query repetition
    - No delay between runs
 
 ## Cost Tracking
 
-To track costs, query warehouse metering history after the benchmark:
+### By Run ID
+
+Track costs for a specific benchmark run by filtering warehouse metering history:
 
 ```sql
 SELECT
@@ -280,14 +344,36 @@ SELECT
     DATE_TRUNC('hour', start_time) as hour,
     SUM(credits_used) as total_credits
 FROM snowflake.account_usage.warehouse_metering_history
-WHERE warehouse_name IN (
-    'BENCHMARK_WH_SMALL',
-    'BENCHMARK_WH_MEDIUM',
-    'BENCHMARK_WH_XLARGE'
-)
-AND start_time >= '2025-11-11'  -- Replace with your benchmark date
+WHERE warehouse_name LIKE 'BENCHMARK_WH_%_001'  -- Replace 001 with your run_id
+AND start_time >= '2025-11-13'  -- Replace with your benchmark date
 GROUP BY 1, 2
 ORDER BY 1, 2;
+```
+
+### By Scale Factor
+
+```sql
+-- Track costs across multiple runs for a specific scale factor
+SELECT
+    warehouse_name,
+    SUM(credits_used) as total_credits
+FROM snowflake.account_usage.warehouse_metering_history
+WHERE warehouse_name LIKE 'BENCHMARK_WH_%'
+AND start_time >= '2025-11-13'
+GROUP BY 1
+ORDER BY 1;
+```
+
+### Total Benchmark Costs
+
+```sql
+SELECT
+    SUM(credits_used) as total_credits,
+    SUM(credits_used_compute) as compute_credits,
+    SUM(credits_used_cloud_services) as cloud_services_credits
+FROM snowflake.account_usage.warehouse_metering_history
+WHERE warehouse_name LIKE 'BENCHMARK_WH_%'
+AND start_time >= '2025-11-13';
 ```
 
 ## Troubleshooting
@@ -297,19 +383,25 @@ ORDER BY 1, 2;
 If you get authentication errors, verify your Snowflake CLI connection:
 
 ```bash
-snow connection test --connection demo
+source .env  # Load connection name from environment
+snow connection test --connection $SNOWFLAKE_CONNECTION
 ```
 
 Ensure `~/.snowflake/connections.toml` has valid credentials.
 
-### Warehouse Permissions
+### Warehouse Creation Failures
 
-If you get permission errors, ensure the BENCHMARK role has access:
+If warehouse creation fails:
 
-```sql
-USE ROLE ACCOUNTADMIN;
-GRANT ALL ON WAREHOUSE BENCHMARK_WH_MEDIUM TO ROLE BENCHMARK;
+1. **Check SYSADMIN access**: The connection must have SYSADMIN privileges to create warehouses
+2. **Check quotas**: Ensure your account has available warehouse quota
+3. **Check permissions**: Verify the BENCHMARK role exists and has necessary grants
+
+Common errors:
 ```
+SQL access control error: Insufficient privileges to operate on warehouse
+```
+Solution: Grant CREATE WAREHOUSE to SYSADMIN or use a connection with ACCOUNTADMIN role.
 
 ### Query Failures
 
@@ -322,16 +414,33 @@ Check the `error_message` column in the results CSV for details. Common issues:
 
 Wait at least 45 minutes after benchmark completion before running enrichment. ACCOUNT_USAGE has a latency of up to 45 minutes.
 
+### Orphaned Warehouses
+
+If the benchmark crashes and warehouses aren't destroyed:
+
+```sql
+-- List all benchmark warehouses
+SHOW WAREHOUSES LIKE 'BENCHMARK_WH_%';
+
+-- Drop specific warehouse
+DROP WAREHOUSE BENCHMARK_WH_MEDIUM_001;
+
+-- Or drop all benchmark warehouses (BE CAREFUL!)
+-- Run SHOW WAREHOUSES first to verify the list!
+```
+
 ## Query Validation
 
 To validate a single query before benchmarking:
 
 ```bash
+source .env  # Load connection name from environment
+
 # Test query 1
-snow sql --connection demo -f snowflake/queries/q01.sql
+snow sql --connection $SNOWFLAKE_CONNECTION -f snowflake/queries/adapted_queries/q01.sql
 
 # Test with timing
-snow sql --connection demo -f snowflake/queries/q01.sql --format JSON
+snow sql --connection $SNOWFLAKE_CONNECTION -f snowflake/queries/adapted_queries/q01.sql --format JSON
 ```
 
 ## Next Steps
@@ -346,6 +455,11 @@ After completing the Snowflake benchmark:
 ## Notes
 
 - Result caching is disabled (`USE_CACHED_RESULT = FALSE`) to ensure fair benchmarking
-- The TPC-H SF100 dataset contains ~100GB of data across 8 tables
-- All queries use fully qualified table names: `SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.*`
+- TPC-H datasets are available at multiple scale factors:
+  - SF100: ~100GB data (default)
+  - SF1000: ~1TB data
+  - SF10000: ~10TB data
+- All queries use fully qualified table names: `SNOWFLAKE_SAMPLE_DATA.TPCH_SF{scale_factor}.*`
 - Queries are adapted from the official TPC-H specification with standard substitution values
+- Warehouses are ephemeral - created per run and destroyed automatically
+- Sequential run IDs enable perfect cost attribution per benchmark execution

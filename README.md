@@ -26,7 +26,8 @@ python main.py # not yet implemented!!
 - Python 3.x with `uv` package manager
 - Snowflake account with access to `SNOWFLAKE_SAMPLE_DATA.TPCH_SF100`
 - Databricks workspace with TPC-H SF100 dataset in Delta Lake
-- Snowflake CLI (`snow`) configured with `demo` connection
+- Snowflake CLI (`snow`) configured with connection specified in `.env` file's `SNOWFLAKE_CONNECTION` variable
+- Environment file configured (copy `.env.example` to `.env` and update with your credentials)
 
 ## Project Structure
 
