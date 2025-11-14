@@ -1,7 +1,9 @@
-"""Databricks connection implementation (placeholder for future development)."""
+"""Databricks connection implementation."""
 
 import logging
 from typing import Any
+
+from databricks import sql
 
 from .base_connection import BaseConnection
 
@@ -23,8 +25,8 @@ class DatabricksConnection(BaseConnection):
         Initialize Databricks connection.
 
         Args:
-            host: Databricks workspace URL
-            token: Access token
+            host: Databricks workspace URL (e.g., https://dbc-xxxx.cloud.databricks.com)
+            token: Personal access token for authentication
             warehouse_id: SQL warehouse ID
             catalog: Catalog name
             schema: Schema name
@@ -53,16 +55,45 @@ class DatabricksConnection(BaseConnection):
         Establish connection to Databricks.
 
         Raises:
-            NotImplementedError: This is a placeholder implementation
+            ConnectionError: If connection cannot be established
         """
-        raise NotImplementedError(
-            "DatabricksConnection is a placeholder. "
-            "Implementation will be added when creating databricks/benchmark.py"
-        )
+        logger.info(f"Connecting to Databricks warehouse: {self.warehouse_id}")
+
+        try:
+            # Clean hostname (remove https:// prefix if present)
+            hostname = self.host.replace("https://", "").replace("http://", "")
+
+            # Build HTTP path for warehouse
+            http_path = f"/sql/1.0/warehouses/{self.warehouse_id}"
+
+            # Connect to Databricks
+            self.connection = sql.connect(
+                server_hostname=hostname,
+                http_path=http_path,
+                access_token=self.token,
+            )
+
+            # Set catalog and schema for this connection
+            cursor = self.connection.cursor()
+            cursor.execute(f"USE CATALOG {self.catalog}")
+            cursor.execute(f"USE SCHEMA {self.schema}")
+            cursor.close()
+
+            logger.info("✓ Connected to Databricks")
+            logger.info(f"✓ Warehouse: {self.warehouse_id}")
+            logger.info(f"✓ Catalog: {self.catalog}")
+            logger.info(f"✓ Schema: {self.schema}")
+
+        except Exception as e:
+            logger.error(f"✗ Failed to connect to Databricks: {e}")
+            raise ConnectionError(f"Databricks connection failed: {e}") from e
 
     def disconnect(self) -> None:
         """Close Databricks connection."""
-        raise NotImplementedError("DatabricksConnection is a placeholder.")
+        if self.connection:
+            self.connection.close()
+            self.connection = None
+            logger.info("✓ Disconnected from Databricks")
 
     def execute_query(self, query: str, **kwargs) -> Any:
         """
@@ -73,9 +104,29 @@ class DatabricksConnection(BaseConnection):
             **kwargs: Additional query execution parameters
 
         Returns:
-            Query result object
+            Databricks SQL cursor object
 
         Raises:
-            NotImplementedError: This is a placeholder implementation
+            RuntimeError: If not connected
         """
-        raise NotImplementedError("DatabricksConnection is a placeholder.")
+        if not self.is_connected():
+            raise RuntimeError("Not connected to Databricks. Call connect() first.")
+
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        return cursor
+
+    def get_cursor(self) -> Any:
+        """
+        Get a cursor for direct query execution.
+
+        Returns:
+            Databricks SQL cursor object
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.is_connected():
+            raise RuntimeError("Not connected to Databricks. Call connect() first.")
+
+        return self.connection.cursor()

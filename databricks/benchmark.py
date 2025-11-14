@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Snowflake TPC-H Benchmark Runner
+Databricks TPC-H Benchmark Runner
 
-Executes TPC-H queries against Snowflake and logs performance metrics.
+Executes TPC-H queries against Databricks SQL Warehouses and logs performance metrics.
 """
 
 import json
 import logging
 import time
+import requests
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, Set, List
@@ -18,9 +19,8 @@ import sys
 # Add parent directory to path to import from common
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import snowflake.connector
-from snowflake.connector import DictCursor
-from common.connections import SnowflakeConnection
+from databricks import sql
+from common.connections import DatabricksConnection
 from common.storage import BenchmarkStorage
 
 # Configure logging
@@ -30,16 +30,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from config import (
-    SNOWFLAKE_CONNECTION,
-    SNOWFLAKE_ROLE,
-    SNOWFLAKE_DATABASE,
-    SNOWFLAKE_SCHEMA,
-    WAREHOUSE_SIZES,
-    WAREHOUSE_SIZE_MAP,
-    WAREHOUSE_PREFIX,
-    WAREHOUSE_AUTO_SUSPEND,
-    WAREHOUSE_AUTO_RESUME,
-    WAREHOUSE_INITIALLY_SUSPENDED,
+    DATABRICKS_HOST,
+    DATABRICKS_TOKEN,
+    WAREHOUSES,
+    CATALOG,
+    SCHEMA,
     NUM_RUNS,
     NUM_QUERIES,
     SCALE_FACTOR,
@@ -53,12 +48,11 @@ from config import (
 storage = BenchmarkStorage(DUCKDB_PATH)
 
 
-class SnowflakeBenchmark:
-    """Manages Snowflake TPC-H benchmark execution."""
+class DatabricksBenchmark:
+    """Manages Databricks TPC-H benchmark execution."""
 
     def __init__(
         self,
-        connection_name: str = SNOWFLAKE_CONNECTION,
         warehouse_size: str = None,
         scale_factor: int = SCALE_FACTOR,
         run_id: str = None,
@@ -66,37 +60,27 @@ class SnowflakeBenchmark:
         """Initialize benchmark runner.
 
         Args:
-            connection_name: Name of connection from ~/.snowflake/connections.toml
-            warehouse_size: Specific warehouse size for this instance (e.g., "small", "medium", "xlarge")
+            warehouse_size: Specific warehouse size for this instance (e.g., "xsmall", "small", "large")
             scale_factor: TPC-H scale factor (e.g., 100, 1000)
             run_id: Optional run ID to use (for parallel instances)
         """
-        self.connection_name = connection_name
         self.warehouse_size = warehouse_size
         self.scale_factor = scale_factor
+        self.warehouse_id = WAREHOUSES.get(warehouse_size) if warehouse_size else None
 
-        # Use SnowflakeConnection abstraction
-        self.sf_connection = SnowflakeConnection(
-            connection_name=connection_name,
-            role=SNOWFLAKE_ROLE,
-            database=SNOWFLAKE_DATABASE,
-            schema=SNOWFLAKE_SCHEMA,
-        )
-        self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
+        # Connection will be created when connect() is called
+        self.dbx_connection: Optional[DatabricksConnection] = None
+        self.conn: Optional[sql.client.Connection] = None
 
         # Use global storage instance for DuckDB
         self.storage = storage
         self.run_id = run_id if run_id else self._get_next_run_id()
-
-        # Track warehouses created by this benchmark (for cleanup)
-        self.created_warehouses: List[str] = []
 
         # Track warehouse state for run type classification
         self.warehouse_started = False  # True after first query executes
         self.queries_executed: Set[int] = (
             set()
         )  # Set of query numbers that have been executed
-
 
     def _get_next_run_id(self) -> str:
         """
@@ -106,15 +90,26 @@ class SnowflakeBenchmark:
             Zero-padded 3-digit run ID (e.g., "001", "002", "003")
         """
         try:
-            # Query DuckDB for the maximum numeric run_id
-            results = self.storage.query("""
+            # Query DuckDB for the maximum numeric run_id from both tables
+            results_sf = self.storage.query("""
                 SELECT MAX(CAST(run_id AS INTEGER)) as max_id
                 FROM snowflake_results
                 WHERE run_id ~ '^[0-9]+$'
             """)
+            results_dbx = self.storage.query("""
+                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
+                FROM databricks_results
+                WHERE run_id ~ '^[0-9]+$'
+            """)
 
-            if results and results[0][0] is not None:
-                max_run_id = results[0][0]
+            max_ids = []
+            if results_sf and results_sf[0][0] is not None:
+                max_ids.append(results_sf[0][0])
+            if results_dbx and results_dbx[0][0] is not None:
+                max_ids.append(results_dbx[0][0])
+
+            if max_ids:
+                max_run_id = max(max_ids)
                 next_run_id = max_run_id + 1
                 return f"{next_run_id:03d}"
             else:
@@ -125,144 +120,147 @@ class SnowflakeBenchmark:
 
     def _get_warehouse_name(self, warehouse_size: str) -> str:
         """
-        Generate warehouse name with run_id suffix.
+        Get warehouse ID for the given size.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
+            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
 
         Returns:
-            Full warehouse name (e.g., "BENCHMARK_WH_MEDIUM_001")
+            Warehouse ID string
         """
-        size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
-        return f"{WAREHOUSE_PREFIX}_{size_upper}_{self.run_id}"
+        return WAREHOUSES[warehouse_size]
 
-    def _create_warehouse(self, warehouse_size: str) -> str:
+    def _stop_warehouse(self, warehouse_id: str):
         """
-        Create a warehouse for this benchmark run.
+        Stop a warehouse using Databricks REST API.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
-
-        Returns:
-            Name of the created warehouse
+            warehouse_id: ID of the warehouse to stop
         """
-        warehouse_name = self._get_warehouse_name(warehouse_size)
-        size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
-
-        logger.info(f"Creating warehouse: {warehouse_name} (size: {size_upper})")
-
-        # Need to use SYSADMIN role to create warehouse
-        self._execute("USE ROLE SYSADMIN")
-
-        create_sql = f"""CREATE WAREHOUSE IF NOT EXISTS {warehouse_name}
-            WITH
-            WAREHOUSE_SIZE = '{size_upper}'
-            AUTO_SUSPEND = {WAREHOUSE_AUTO_SUSPEND}
-            AUTO_RESUME = {str(WAREHOUSE_AUTO_RESUME).upper()}
-            INITIALLY_SUSPENDED = {str(WAREHOUSE_INITIALLY_SUSPENDED).upper()}
-            COMMENT = 'Ephemeral warehouse for benchmark run {self.run_id}'"""
-
-        self._execute(create_sql)
-
-        # Grant all privileges to BENCHMARK role so it can use and drop the warehouse
-        grant_sql = f"GRANT ALL ON WAREHOUSE {warehouse_name} TO ROLE {SNOWFLAKE_ROLE}"
-        self._execute(grant_sql)
-
-        # Switch back to BENCHMARK role
-        self._execute(f"USE ROLE {SNOWFLAKE_ROLE}")
-
-        logger.info(f"✓ Created warehouse: {warehouse_name}")
-        self.created_warehouses.append(warehouse_name)
-
-        return warehouse_name
-
-    def _destroy_warehouse(self, warehouse_name: str):
-        """
-        Destroy a warehouse created by this benchmark.
-
-        Args:
-            warehouse_name: Name of warehouse to destroy
-        """
-        logger.info(f"Destroying warehouse: {warehouse_name}")
+        logger.info(f"Stopping warehouse: {warehouse_id}")
 
         try:
-            drop_sql = f"DROP WAREHOUSE IF EXISTS {warehouse_name}"
-            self._execute(drop_sql)
-            logger.info(f"✓ Destroyed warehouse: {warehouse_name}")
+            # Clean hostname
+            hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
+            url = f"https://{hostname}/api/2.0/sql/warehouses/{warehouse_id}/stop"
+
+            headers = {
+                "Authorization": f"Bearer {DATABRICKS_TOKEN}",
+                "Content-Type": "application/json",
+            }
+
+            response = requests.post(url, headers=headers)
+            response.raise_for_status()
+
+            logger.info(f"✓ Stopped warehouse: {warehouse_id}")
+
+            # Wait for warehouse to fully stop (check status)
+            self._wait_for_warehouse_state(warehouse_id, "STOPPED")
+
         except Exception as e:
-            logger.error(f"✗ Failed to destroy warehouse {warehouse_name}: {e}")
+            logger.error(f"✗ Failed to stop warehouse {warehouse_id}: {e}")
+            raise
 
-    def _create_all_warehouses(self, warehouse_sizes: List[str]):
+    def _start_warehouse(self, warehouse_id: str):
         """
-        Create all warehouses needed for this benchmark run.
+        Start a warehouse using Databricks REST API.
 
         Args:
-            warehouse_sizes: List of warehouse size keys to create
+            warehouse_id: ID of the warehouse to start
         """
-        logger.info("\n" + "=" * 70)
-        logger.info("CREATING WAREHOUSES")
-        logger.info("=" * 70)
+        logger.info(f"Starting warehouse: {warehouse_id}")
 
-        for warehouse_size in warehouse_sizes:
-            self._create_warehouse(warehouse_size)
+        try:
+            # Clean hostname
+            hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
+            url = f"https://{hostname}/api/2.0/sql/warehouses/{warehouse_id}/start"
 
-        logger.info("=" * 70)
+            headers = {
+                "Authorization": f"Bearer {DATABRICKS_TOKEN}",
+                "Content-Type": "application/json",
+            }
 
-    def _destroy_all_warehouses(self):
-        """Destroy all warehouses created by this benchmark run."""
-        if not self.created_warehouses:
-            return
+            response = requests.post(url, headers=headers)
+            response.raise_for_status()
 
-        logger.info("\n" + "=" * 70)
-        logger.info("CLEANING UP WAREHOUSES")
-        logger.info("=" * 70)
+            logger.info(f"✓ Started warehouse: {warehouse_id}")
 
-        for warehouse_name in self.created_warehouses:
-            self._destroy_warehouse(warehouse_name)
+            # Wait for warehouse to be ready
+            self._wait_for_warehouse_state(warehouse_id, "RUNNING")
 
-        logger.info("=" * 70)
+        except Exception as e:
+            logger.error(f"✗ Failed to start warehouse {warehouse_id}: {e}")
+            raise
 
-    def connect(self):
-        """Establish connection to Snowflake using the configured connection."""
-        # Use SnowflakeConnection abstraction
-        self.sf_connection.connect()
-
-        # Store reference to the underlying connection for backward compatibility
-        self.conn = self.sf_connection.connection
-
-    def disconnect(self):
-        """Close Snowflake connection."""
-        if self.sf_connection:
-            self.sf_connection.disconnect()
-            self.conn = None
-
-    def _execute(
-        self, sql: str, async_exec: bool = False
-    ) -> snowflake.connector.cursor.SnowflakeCursor:
+    def _get_warehouse_state(self, warehouse_id: str) -> str:
         """
-        Execute SQL statement.
+        Get current state of a warehouse.
 
         Args:
-            sql: SQL statement to execute
-            async_exec: If True, execute asynchronously
+            warehouse_id: ID of the warehouse
 
         Returns:
-            Cursor object
+            State string (e.g., "RUNNING", "STOPPED", "STARTING", "STOPPING")
         """
-        cursor = self.conn.cursor()
-        if async_exec:
-            cursor.execute_async(sql)
-        else:
-            cursor.execute(sql)
-        return cursor
+        # Clean hostname
+        hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
+        url = f"https://{hostname}/api/2.0/sql/warehouses/{warehouse_id}"
 
-    def switch_warehouse(self, warehouse_name: str):
-        """Switch to a different warehouse."""
-        # Don't print here - will be printed in run_warehouse_benchmark with proper context
-        self._execute(f"USE WAREHOUSE {warehouse_name}")
+        headers = {
+            "Authorization": f"Bearer {DATABRICKS_TOKEN}",
+        }
+
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        return response.json().get("state", "UNKNOWN")
+
+    def _wait_for_warehouse_state(self, warehouse_id: str, target_state: str, timeout: int = 300):
+        """
+        Wait for warehouse to reach target state.
+
+        Args:
+            warehouse_id: ID of the warehouse
+            target_state: Target state to wait for (e.g., "RUNNING", "STOPPED")
+            timeout: Maximum time to wait in seconds
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            state = self._get_warehouse_state(warehouse_id)
+            if state == target_state:
+                logger.info(f"✓ Warehouse {warehouse_id} is {target_state}")
+                return
+            logger.debug(f"Waiting for warehouse {warehouse_id} to be {target_state} (current: {state})")
+            time.sleep(5)
+
+        raise TimeoutError(f"Warehouse {warehouse_id} did not reach {target_state} within {timeout}s")
+
+    def connect(self):
+        """Establish connection to Databricks using the configured warehouse."""
+        if not self.warehouse_id:
+            raise ValueError("warehouse_size must be specified to connect")
+
+        # Use DatabricksConnection abstraction
+        self.dbx_connection = DatabricksConnection(
+            host=DATABRICKS_HOST,
+            token=DATABRICKS_TOKEN,
+            warehouse_id=self.warehouse_id,
+            catalog=CATALOG,
+            schema=SCHEMA,
+        )
+        self.dbx_connection.connect()
+
+        # Store reference to the underlying connection for backward compatibility
+        self.conn = self.dbx_connection.connection
+
+    def disconnect(self):
+        """Close Databricks connection."""
+        if self.dbx_connection:
+            self.dbx_connection.disconnect()
+            self.conn = None
 
     def load_query(self, query_num: int) -> str:
-        """Load TPC-H query from file and substitute the scale factor."""
+        """Load TPC-H query from file."""
         query_file = QUERIES_DIR / f"q{query_num:02d}.sql"
         if not query_file.exists():
             raise FileNotFoundError(f"Query file not found: {query_file}")
@@ -270,26 +268,10 @@ class SnowflakeBenchmark:
         with open(query_file, "r") as f:
             query_sql = f.read().strip()
 
-        # Replace the scale factor in the query (e.g., TPCH_SF100 -> TPCH_SF1000)
-        query_sql = query_sql.replace("TPCH_SF100", f"TPCH_SF{self.scale_factor}")
-
         return query_sql
 
-    def set_query_tag(self, query_tag: Dict[str, Any]):
-        """
-        Set the query tag for the next query.
-
-        Args:
-            query_tag: Dictionary to be serialized as JSON query tag
-        """
-        # Serialize the query tag to JSON
-        query_tag_json = json.dumps(query_tag)
-        # Escape single quotes for SQL by doubling them
-        query_tag_escaped = query_tag_json.replace("'", "''")
-        self._execute(f"ALTER SESSION SET QUERY_TAG = '{query_tag_escaped}'")
-
     def execute_query(
-        self, query_num: int, run_num: int, warehouse_name: str, warehouse_size: str
+        self, query_num: int, run_num: int, warehouse_id: str, warehouse_size: str
     ) -> Dict[str, Any]:
         """
         Execute a single TPC-H query and capture metrics.
@@ -297,8 +279,8 @@ class SnowflakeBenchmark:
         Args:
             query_num: Query number (1-22)
             run_num: Run iteration (1-4)
-            warehouse_name: Name of the warehouse
-            warehouse_size: Size of the warehouse (SMALL, MEDIUM, XLARGE)
+            warehouse_id: ID of the warehouse
+            warehouse_size: Size of the warehouse (XSMALL, SMALL, LARGE)
 
         Returns:
             Dictionary with query execution metrics
@@ -323,7 +305,6 @@ class SnowflakeBenchmark:
 
         # Include warehouse size in log output for clarity in parallel execution
         wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
-        # Use logger but print without newline by constructing the message and printing later
         log_prefix = f"{wh_prefix} [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}"
 
         # Load query SQL
@@ -336,37 +317,44 @@ class SnowflakeBenchmark:
                 run_num,
                 run_type,
                 json.dumps(query_tag),
-                warehouse_name,
+                warehouse_id,
                 warehouse_size,
                 str(e),
             )
 
-        # Set query tag
-        self.set_query_tag(query_tag)
+        # Add query tag as SQL comment
+        query_tag_json = json.dumps(query_tag)
+        tagged_query = f"/* BENCHMARK: {query_tag_json} */\n{query_sql}"
 
         # Execute query and measure time
         start_time = time.time()
         timestamp = datetime.utcnow().isoformat()
         error_message = None
-        query_id = None
+        statement_id = None
         rows_produced = 0
 
         try:
-            # Execute asynchronously to get query ID immediately
-            cursor = self._execute(query_sql, async_exec=True)
-            query_id = cursor.sfqid
+            # Execute query
+            cursor = self.conn.cursor()
+            cursor.execute(tagged_query)
 
-            # Wait for completion
-            while self.conn.is_still_running(self.conn.get_query_status(query_id)):
-                time.sleep(0.5)
+            # Get statement_id from cursor (if available)
+            # Note: The Databricks SQL connector may expose this differently
+            # We'll try to get it from the cursor or connection
+            try:
+                # Try to get statement_id from cursor attributes
+                if hasattr(cursor, 'query_id'):
+                    statement_id = cursor.query_id
+                elif hasattr(cursor, '_op_handle') and hasattr(cursor._op_handle, 'statement_id'):
+                    statement_id = cursor._op_handle.statement_id
+            except Exception:
+                # If we can't get the statement_id, that's okay
+                pass
 
-            # Get results
-            result_cursor = self.conn.cursor(DictCursor)
-            result_cursor.get_results_from_sfqid(query_id)
             # Fetch all results to get accurate row count
-            # Note: timing is already complete, so this doesn't affect metrics
-            results = result_cursor.fetchall()
+            results = cursor.fetchall()
             rows_produced = len(results)
+            cursor.close()
 
         except Exception as e:
             error_message = str(e)
@@ -386,22 +374,22 @@ class SnowflakeBenchmark:
         result = {
             "run_id": self.run_id,
             "timestamp": timestamp,
-            "platform": "snowflake",
+            "platform": "databricks",
             "scenario": "primary",
-            "warehouse_name": warehouse_name,
+            "warehouse_name": warehouse_id,
             "warehouse_size": warehouse_size,
             "query_num": query_num,
             "run_num": run_num,
             "run_type": run_type,
-            "query_tag": json.dumps(query_tag),  # Store as JSON string in CSV
-            "query_id": query_id or "",
+            "query_tag": json.dumps(query_tag),  # Store as JSON string
+            "query_id": statement_id or "",
             "execution_time_sec": round(execution_time, 3),
             "rows_produced": rows_produced,
             "error_message": error_message or "",
         }
 
         # Log to DuckDB immediately
-        self.storage.write_result(result)
+        self.storage.write_databricks_result(result)
 
         return result
 
@@ -411,7 +399,7 @@ class SnowflakeBenchmark:
         run_num: int,
         run_type: str,
         query_tag: str,
-        warehouse_name: str,
+        warehouse_id: str,
         warehouse_size: str,
         error_message: str,
     ) -> Dict[str, Any]:
@@ -419,9 +407,9 @@ class SnowflakeBenchmark:
         return {
             "run_id": self.run_id,
             "timestamp": datetime.utcnow().isoformat(),
-            "platform": "snowflake",
+            "platform": "databricks",
             "scenario": "primary",
-            "warehouse_name": warehouse_name,
+            "warehouse_name": warehouse_id,
             "warehouse_size": warehouse_size,
             "query_num": query_num,
             "run_num": run_num,
@@ -432,7 +420,6 @@ class SnowflakeBenchmark:
             "rows_produced": 0,
             "error_message": error_message,
         }
-
 
     def run_warehouse_benchmark(
         self,
@@ -446,24 +433,21 @@ class SnowflakeBenchmark:
         This method is designed to run in a separate thread for parallel execution.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
+            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
             query_nums: List of query numbers to run
             num_runs: Number of runs per query
 
         Returns:
             Dictionary with execution summary
         """
-        warehouse_name = self._get_warehouse_name(warehouse_size)
+        warehouse_id = self._get_warehouse_name(warehouse_size)
 
         logger.info(
-            f"\n[{warehouse_size.upper()}] Starting benchmark on {warehouse_name}"
+            f"\n[{warehouse_size.upper()}] Starting benchmark on warehouse {warehouse_id}"
         )
-        logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_name}")
+        logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_id}")
 
         try:
-            # Switch to this warehouse
-            self.switch_warehouse(warehouse_name)
-
             # Execute all queries
             for query_num in query_nums:
                 for run_num in range(1, num_runs + 1):
@@ -471,17 +455,17 @@ class SnowflakeBenchmark:
                     self.execute_query(
                         query_num=query_num,
                         run_num=run_num,
-                        warehouse_name=warehouse_name,
+                        warehouse_id=warehouse_id,
                         warehouse_size=warehouse_size.upper(),
                     )
 
             logger.info(
-                f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}"
+                f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_id}"
             )
 
             return {
                 "warehouse_size": warehouse_size,
-                "warehouse_name": warehouse_name,
+                "warehouse_id": warehouse_id,
                 "queries_completed": len(query_nums) * num_runs,
                 "success": True,
             }
@@ -490,7 +474,7 @@ class SnowflakeBenchmark:
             logger.error(f"\n[{warehouse_size.upper()}] ✗ Error: {e}")
             return {
                 "warehouse_size": warehouse_size,
-                "warehouse_name": warehouse_name,
+                "warehouse_id": warehouse_id,
                 "success": False,
                 "error": str(e),
             }
@@ -501,6 +485,7 @@ class SnowflakeBenchmark:
         query_nums: list[int] = None,
         num_runs: int = NUM_RUNS,
         parallel: bool = True,
+        stop_start_warehouses: bool = False,
     ):
         """
         Run the complete benchmark across multiple warehouse sizes.
@@ -510,15 +495,16 @@ class SnowflakeBenchmark:
             query_nums: List of query numbers to run (default: all 1-22)
             num_runs: Number of runs per query (default: 4)
             parallel: If True, run warehouses in parallel (default: True)
+            stop_start_warehouses: If True, stop/start warehouses for cold runs (default: False)
         """
         # Default to all warehouses and queries if not specified
         if warehouse_sizes is None:
-            warehouse_sizes = WAREHOUSE_SIZES
+            warehouse_sizes = list(WAREHOUSES.keys())
         if query_nums is None:
             query_nums = list(range(1, NUM_QUERIES + 1))
 
         logger.info("=" * 70)
-        logger.info("SNOWFLAKE TPC-H BENCHMARK")
+        logger.info("DATABRICKS TPC-H BENCHMARK")
         logger.info("=" * 70)
         logger.info(f"Run ID: {self.run_id}")
         logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
@@ -526,46 +512,50 @@ class SnowflakeBenchmark:
         logger.info(f"Queries: {len(query_nums)} queries")
         logger.info(f"Runs per query: {num_runs}")
         logger.info(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
+        logger.info(f"Stop/start warehouses: {stop_start_warehouses}")
         logger.info(
             f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}"
         )
         logger.info("=" * 70)
 
-        # Connect to Snowflake first (needed for warehouse creation)
-        if not parallel:
-            self.connect()
-
-        # DuckDB is initialized globally, no need for _init_csv()
-
-        # Create warehouses after connection
-        if not parallel:
-            self._create_all_warehouses(warehouse_sizes)
+        # Stop all warehouses if requested (for true cold start)
+        if stop_start_warehouses:
+            logger.info("\n" + "=" * 70)
+            logger.info("STOPPING WAREHOUSES FOR COLD START")
+            logger.info("=" * 70)
+            for warehouse_size in warehouse_sizes:
+                warehouse_id = WAREHOUSES[warehouse_size]
+                self._stop_warehouse(warehouse_id)
+            logger.info("=" * 70)
 
         try:
             if not parallel:
                 # Sequential execution
                 for warehouse_size in warehouse_sizes:
-                    self.run_warehouse_benchmark(warehouse_size, query_nums, num_runs)
+                    # Create instance for this warehouse
+                    instance = DatabricksBenchmark(
+                        warehouse_size=warehouse_size,
+                        scale_factor=self.scale_factor,
+                        run_id=self.run_id,
+                    )
+                    instance.connect()
+                    try:
+                        instance.run_warehouse_benchmark(warehouse_size, query_nums, num_runs)
+                    finally:
+                        instance.disconnect()
             else:
                 # Parallel execution across warehouses
                 logger.info("\n🚀 Launching parallel execution across all warehouses...")
 
-                # Connect the main instance first to create warehouses
-                self.connect()
-                self._create_all_warehouses(warehouse_sizes)
-
                 # Create separate benchmark instances for each warehouse
-                # Each needs its own connection but shares the same run_id and CSV file
+                # Each needs its own connection but shares the same run_id
                 benchmark_instances = {}
                 for warehouse_size in warehouse_sizes:
-                    instance = SnowflakeBenchmark(
-                        connection_name=self.connection_name,
+                    instance = DatabricksBenchmark(
                         warehouse_size=warehouse_size,
                         scale_factor=self.scale_factor,
                         run_id=self.run_id,  # Share the same run_id
                     )
-                    # Share warehouse list for cleanup
-                    instance.created_warehouses = self.created_warehouses
                     benchmark_instances[warehouse_size] = instance
 
                 try:
@@ -608,14 +598,8 @@ class SnowflakeBenchmark:
                     for instance in benchmark_instances.values():
                         instance.disconnect()
 
-                    # Destroy warehouses before disconnecting main instance
-                    self._destroy_all_warehouses()
-                    self.disconnect()
-
         finally:
-            # Always clean up warehouses (sequential mode only, parallel already handled)
-            if not parallel:
-                self._destroy_all_warehouses()
+            pass  # No warehouse cleanup needed (using pre-created warehouses)
 
         logger.info("\n" + "=" * 70)
         logger.info("BENCHMARK COMPLETE")
@@ -623,17 +607,16 @@ class SnowflakeBenchmark:
         logger.info(f"Results saved to: {DUCKDB_PATH}")
         logger.info(f"Run ID: {self.run_id}")
         logger.info("\nNext steps:")
-        logger.info("1. Wait 45 minutes for ACCOUNT_USAGE to populate")
-        logger.info("2. Run: uv run snowflake/enrich_results.py")
-        logger.info("3. Query latest results: SELECT * FROM latest_run;")
+        logger.info("1. Query results from DuckDB")
+        logger.info("2. Compare with Snowflake results")
 
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Run Snowflake TPC-H Benchmark")
+    parser = argparse.ArgumentParser(description="Run Databricks TPC-H Benchmark")
     parser.add_argument(
         "--warehouse",
-        choices=["small", "medium", "xlarge"],
+        choices=list(WAREHOUSES.keys()),
         action="append",
         help="Warehouse size(s) to test (can specify multiple times). Default: all",
     )
@@ -649,15 +632,14 @@ def main():
         help=f"Number of runs per query (default: {NUM_RUNS})",
     )
     parser.add_argument(
-        "--connection",
-        type=str,
-        default=SNOWFLAKE_CONNECTION,
-        help=f"Snowflake connection name (default: {SNOWFLAKE_CONNECTION})",
-    )
-    parser.add_argument(
         "--sequential",
         action="store_true",
         help="Run warehouses sequentially instead of in parallel (default: parallel)",
+    )
+    parser.add_argument(
+        "--stop-start",
+        action="store_true",
+        help="Stop and start warehouses for true cold runs (default: False)",
     )
     parser.add_argument(
         "--scale-factor",
@@ -674,31 +656,15 @@ def main():
         query_nums = [int(q.strip()) for q in args.queries.split(",")]
 
     # Run benchmark
-    benchmark = SnowflakeBenchmark(
-        connection_name=args.connection, scale_factor=args.scale_factor
-    )
+    benchmark = DatabricksBenchmark(scale_factor=args.scale_factor)
 
-    try:
-        if not args.sequential:
-            # Parallel mode - don't connect main instance, it will create separate instances
-            benchmark.run_benchmark(
-                warehouse_sizes=args.warehouse,
-                query_nums=query_nums,
-                num_runs=args.runs,
-                parallel=True,
-            )
-        else:
-            # Sequential mode - connect and run on main instance
-            benchmark.connect()
-            benchmark.run_benchmark(
-                warehouse_sizes=args.warehouse,
-                query_nums=query_nums,
-                num_runs=args.runs,
-                parallel=False,
-            )
-    finally:
-        if args.sequential:
-            benchmark.disconnect()
+    benchmark.run_benchmark(
+        warehouse_sizes=args.warehouse,
+        query_nums=query_nums,
+        num_runs=args.runs,
+        parallel=not args.sequential,
+        stop_start_warehouses=args.stop_start,
+    )
 
 
 if __name__ == "__main__":

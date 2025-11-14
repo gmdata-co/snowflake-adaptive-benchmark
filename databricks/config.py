@@ -2,18 +2,25 @@
 Configuration for Databricks TPC-H Benchmark
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Databricks connection settings
-# These will be loaded from ~/.databrickscfg or environment variables
-DATABRICKS_PROFILE = "DEFAULT"  # Connection profile name
+# Load environment variables from .env file automatically
+load_dotenv()
+
+# Databricks connection settings (from .env file)
+DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
+DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
 
 # SQL Warehouse configurations
 # Created by project_setup.py
+# These are SERVERLESS SQL Warehouses (warehouse_type=PRO with enable_serverless_compute=True)
+# This is the correct configuration for fair comparison with Snowflake
 WAREHOUSES = {
-    "xsmall": "f9de55834a86c9db",  # SMALL equivalent (2X-Small)
-    "small": "81c01fce5f1c223c",  # MEDIUM equivalent (Small) - Primary baseline
-    "large": "e2ce84a538ff2ada",  # X-LARGE equivalent (Large)
+    "xsmall": "520f645d004a6766",  # SMALL equivalent (2X-Small) - SERVERLESS
+    "small": "5737a03930861a01",  # MEDIUM equivalent (Small) - Primary baseline - SERVERLESS
+    "large": "a2a50162b26c3883",  # X-LARGE equivalent (Large) - SERVERLESS
 }
 
 # Test parameters (matching Snowflake)
@@ -42,6 +49,10 @@ RESULTS_DIR = BASE_DIR / "results"
 
 # Ensure results directory exists
 RESULTS_DIR.mkdir(exist_ok=True)
+
+# DuckDB database path (in project root)
+PROJECT_ROOT = BASE_DIR.parent
+DUCKDB_PATH = PROJECT_ROOT / "benchmark_results.duckdb"
 
 # CSV Schema - columns for benchmark results (matching Snowflake structure)
 CSV_COLUMNS = [

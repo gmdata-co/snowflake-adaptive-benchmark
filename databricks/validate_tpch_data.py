@@ -10,8 +10,11 @@ This script validates that TPC-H data has been correctly loaded into Databricks 
 """
 
 import logging
-from databricks import sql
-import os
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import common modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Configure logging
 logging.basicConfig(
@@ -20,7 +23,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import config
-from config import CATALOG, SCHEMA, SCALE_FACTOR, WAREHOUSES
+from config import (
+    CATALOG,
+    SCHEMA,
+    SCALE_FACTOR,
+    WAREHOUSES,
+    DATABRICKS_HOST,
+    DATABRICKS_TOKEN,
+)
+from common.connections import DatabricksConnection
 
 # Expected row counts for TPC-H SF1000
 EXPECTED_ROW_COUNTS = {
@@ -35,22 +46,20 @@ EXPECTED_ROW_COUNTS = {
 }
 
 
-def get_sql_connection():
-    """Get SQL connection to Databricks warehouse."""
-    host = os.environ.get("DATABRICKS_HOST")
-    token = os.environ.get("DATABRICKS_TOKEN")
-
-    if not host or not token:
-        raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN must be set")
+def get_databricks_connection():
+    """Get Databricks connection using the connection abstraction layer."""
+    if not DATABRICKS_HOST or not DATABRICKS_TOKEN:
+        raise ValueError("DATABRICKS_HOST and DATABRICKS_TOKEN must be set in config")
 
     # Use the small warehouse for validation
     warehouse_id = WAREHOUSES["small"]
-    http_path = f"/sql/1.0/warehouses/{warehouse_id}"
 
-    return sql.connect(
-        server_hostname=host.replace("https://", "").replace("http://", ""),
-        http_path=http_path,
-        access_token=token,
+    return DatabricksConnection(
+        host=DATABRICKS_HOST,
+        token=DATABRICKS_TOKEN,
+        warehouse_id=warehouse_id,
+        catalog=CATALOG,
+        schema=SCHEMA,
     )
 
 
@@ -60,17 +69,15 @@ def validate_row_counts():
     logger.info("VALIDATING ROW COUNTS")
     logger.info("=" * 70)
 
-    with get_sql_connection() as connection:
-        cursor = connection.cursor()
+    connection = get_databricks_connection()
+    connection.connect()
 
-        # Set catalog and schema
-        cursor.execute(f"USE CATALOG {CATALOG}")
-        cursor.execute(f"USE SCHEMA {SCHEMA}")
-
+    try:
         all_valid = True
 
         for table, expected_count in EXPECTED_ROW_COUNTS.items():
             try:
+                cursor = connection.get_cursor()
                 cursor.execute(f"SELECT COUNT(*) as cnt FROM {table}")
                 result = cursor.fetchone()
                 actual_count = result[0] if result else 0
@@ -96,6 +103,9 @@ def validate_row_counts():
                 logger.error(f"✗ {table:12s}: ERROR - {e}")
                 all_valid = False
 
+    finally:
+        connection.disconnect()
+
     return all_valid
 
 
@@ -108,17 +118,16 @@ def validate_table_properties():
         "Checking for clustering/partitioning (should have NONE for fair comparison)"
     )
 
-    with get_sql_connection() as connection:
-        cursor = connection.cursor()
+    connection = get_databricks_connection()
+    connection.connect()
 
-        cursor.execute(f"USE CATALOG {CATALOG}")
-        cursor.execute(f"USE SCHEMA {SCHEMA}")
-
+    try:
         all_valid = True
 
         for table in EXPECTED_ROW_COUNTS.keys():
             try:
                 # Check table properties
+                cursor = connection.get_cursor()
                 cursor.execute(f"DESCRIBE DETAIL {table}")
                 details = cursor.fetchone()
 
@@ -146,6 +155,9 @@ def validate_table_properties():
                 logger.error(f"  ✗ Error checking {table}: {e}")
                 all_valid = False
 
+    finally:
+        connection.disconnect()
+
     return all_valid
 
 
@@ -155,20 +167,20 @@ def run_sample_queries():
     logger.info("RUNNING SAMPLE QUERIES")
     logger.info("=" * 70)
 
-    with get_sql_connection() as connection:
-        cursor = connection.cursor()
+    connection = get_databricks_connection()
+    connection.connect()
 
-        cursor.execute(f"USE CATALOG {CATALOG}")
-        cursor.execute(f"USE SCHEMA {SCHEMA}")
-
+    try:
         # Sample query 1: Check REGION table
         logger.info("\n1. Checking REGION table (should have 5 regions):")
+        cursor = connection.get_cursor()
         cursor.execute("SELECT r_name FROM region ORDER BY r_name")
         regions = [row[0] for row in cursor.fetchall()]
         logger.info(f"   Regions: {', '.join(regions)}")
 
         # Sample query 2: Check date ranges in ORDERS
         logger.info("\n2. Checking date range in ORDERS table:")
+        cursor = connection.get_cursor()
         cursor.execute("""
             SELECT
                 MIN(o_orderdate) as min_date,
@@ -183,6 +195,7 @@ def run_sample_queries():
 
         # Sample query 3: Check LINEITEM aggregates
         logger.info("\n3. Running aggregate query on LINEITEM (may take a minute):")
+        cursor = connection.get_cursor()
         cursor.execute("""
             SELECT
                 l_returnflag,
@@ -199,6 +212,9 @@ def run_sample_queries():
             logger.info(f"   {row[0]:11s} | {row[1]:11s} | {row[2]:>15,}")
 
         logger.info("\n✓ Sample queries completed successfully")
+
+    finally:
+        connection.disconnect()
 
 
 def main():

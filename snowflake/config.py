@@ -53,6 +53,10 @@ RESULTS_DIR = BASE_DIR / "results"
 # Ensure results directory exists
 RESULTS_DIR.mkdir(exist_ok=True)
 
+# DuckDB database path (in project root)
+PROJECT_ROOT = BASE_DIR.parent
+DUCKDB_PATH = PROJECT_ROOT / "benchmark_results.duckdb"
+
 # CSV Schema - columns for benchmark results
 CSV_COLUMNS = [
     "run_id",  # UUID for the entire benchmark run session

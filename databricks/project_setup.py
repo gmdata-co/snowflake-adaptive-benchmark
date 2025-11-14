@@ -118,8 +118,8 @@ def create_warehouse(w: WorkspaceClient, warehouse_key: str, config: dict):
             cluster_size=config["cluster_size"],
             warehouse_type=CreateWarehouseRequestWarehouseType.PRO,
             auto_stop_mins=AUTO_STOP_MINS,
-            enable_serverless_compute=True,  # Use serverless (most similar to Snowflake)
-            max_num_clusters=1,  # Single cluster for consistent benchmarking
+            enable_serverless_compute=True,  # This creates a Serverless SQL Warehouse (most similar to Snowflake)
+            max_num_clusters=1,  # Required when enable_serverless_compute=True
             spot_instance_policy=SpotInstancePolicy.COST_OPTIMIZED,
             tags=EndpointConfPair(key="purpose", value="tpch_benchmark"),
         )
