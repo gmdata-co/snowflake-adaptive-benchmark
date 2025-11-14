@@ -3,3 +3,5 @@ config.cpython-311.pyc
 snowflake/__pycache__/*
 snowflake/results/backups/*
 __pycache__/*
+logs/
+snowflake/export/gcs-service-account-key.json
