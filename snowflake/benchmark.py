@@ -5,7 +5,6 @@ Snowflake TPC-H Benchmark Runner
 Executes TPC-H queries against Snowflake and logs performance metrics.
 """
 
-import csv
 import json
 import logging
 import time
@@ -13,14 +12,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, Set, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
 import argparse
-import toml
+import sys
+
+# Add parent directory to path to import from common
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import snowflake.connector
 from snowflake.connector import DictCursor
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
+from common.connections import SnowflakeConnection
+from common.storage import BenchmarkStorage
 
 # Configure logging
 logging.basicConfig(
@@ -45,11 +46,11 @@ from config import (
     APP_NAME,
     QUERIES_DIR,
     RESULTS_DIR,
-    CSV_COLUMNS,
+    DUCKDB_PATH,
 )
 
-# Global lock for thread-safe CSV writing
-csv_lock = Lock()
+# Global storage instance for thread-safe DuckDB writes
+storage = BenchmarkStorage(DUCKDB_PATH)
 
 
 class SnowflakeBenchmark:
@@ -73,10 +74,18 @@ class SnowflakeBenchmark:
         self.connection_name = connection_name
         self.warehouse_size = warehouse_size
         self.scale_factor = scale_factor
+
+        # Use SnowflakeConnection abstraction
+        self.sf_connection = SnowflakeConnection(
+            connection_name=connection_name,
+            role=SNOWFLAKE_ROLE,
+            database=SNOWFLAKE_DATABASE,
+            schema=SNOWFLAKE_SCHEMA,
+        )
         self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
-        self.csv_file = RESULTS_DIR / "benchmark_results.csv"
-        self.csv_writer: Optional[csv.DictWriter] = None
-        self.csv_handle = None
+
+        # Use global storage instance for DuckDB
+        self.storage = storage
         self.run_id = run_id if run_id else self._get_next_run_id()
 
         # Track warehouses created by this benchmark (for cleanup)
@@ -88,64 +97,31 @@ class SnowflakeBenchmark:
             set()
         )  # Set of query numbers that have been executed
 
-    def _load_connection_config(self, connection_name: str) -> dict:
-        """Load connection configuration from ~/.snowflake/connections.toml"""
-        connections_file = Path.home() / ".snowflake" / "connections.toml"
-        if not connections_file.exists():
-            raise FileNotFoundError(
-                f"Snowflake connections file not found: {connections_file}"
-            )
-
-        config = toml.load(connections_file)
-        if connection_name not in config:
-            raise ValueError(
-                f"Connection '{connection_name}' not found in {connections_file}"
-            )
-
-        return config[connection_name]
-
-    def _load_private_key(self, private_key_path: str):
-        """Load and decode the private key for JWT authentication."""
-        with open(private_key_path, "rb") as key_file:
-            private_key = serialization.load_pem_private_key(
-                key_file.read(), password=None, backend=default_backend()
-            )
-
-        return private_key.private_bytes(
-            encoding=serialization.Encoding.DER,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
 
     def _get_next_run_id(self) -> str:
         """
-        Get the next sequential run ID by reading existing CSV data.
+        Get the next sequential run ID by reading existing DuckDB data.
 
         Returns:
             Zero-padded 3-digit run ID (e.g., "001", "002", "003")
         """
-        if not self.csv_file.exists():
-            return "001"
-
-        max_run_id = 0
         try:
-            with open(self.csv_file, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    run_id = row.get('run_id', '0')
-                    # Try to parse as integer (skip UUID format from old data)
-                    try:
-                        run_id_int = int(run_id)
-                        max_run_id = max(max_run_id, run_id_int)
-                    except ValueError:
-                        # Skip non-numeric run_ids (old UUID format)
-                        continue
+            # Query DuckDB for the maximum numeric run_id
+            results = self.storage.query("""
+                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
+                FROM snowflake_results
+                WHERE run_id ~ '^[0-9]+$'
+            """)
+
+            if results and results[0][0] is not None:
+                max_run_id = results[0][0]
+                next_run_id = max_run_id + 1
+                return f"{next_run_id:03d}"
+            else:
+                return "001"
         except Exception as e:
             logger.warning(f"Could not read existing run IDs: {e}. Starting from 001")
             return "001"
-
-        next_run_id = max_run_id + 1
-        return f"{next_run_id:03d}"
 
     def _get_warehouse_name(self, warehouse_size: str) -> str:
         """
@@ -248,42 +224,17 @@ class SnowflakeBenchmark:
 
     def connect(self):
         """Establish connection to Snowflake using the configured connection."""
-        logger.info(f"Connecting to Snowflake using connection: {self.connection_name}")
+        # Use SnowflakeConnection abstraction
+        self.sf_connection.connect()
 
-        # Load connection configuration from ~/.snowflake/connections.toml
-        conn_config = self._load_connection_config(self.connection_name)
-
-        # Prepare connection parameters
-        connect_params = {
-            "account": conn_config["account"],
-            "user": conn_config["user"],
-            "role": SNOWFLAKE_ROLE,
-            "database": SNOWFLAKE_DATABASE,
-            "schema": SNOWFLAKE_SCHEMA,
-        }
-
-        # Handle JWT authentication if configured
-        if conn_config.get("authenticator") == "SNOWFLAKE_JWT":
-            private_key_path = conn_config.get("private_key_path") or conn_config.get(
-                "private_key_file"
-            )
-            if private_key_path:
-                connect_params["private_key"] = self._load_private_key(private_key_path)
-
-        # Connect to Snowflake
-        self.conn = snowflake.connector.connect(**connect_params)
-
-        # Disable result caching to ensure accurate benchmarking
-        self._execute("ALTER SESSION SET USE_CACHED_RESULT = FALSE")
-        logger.info("✓ Connected to Snowflake")
-        logger.info(f"✓ Using role: {SNOWFLAKE_ROLE}")
-        logger.info(f"✓ Database: {SNOWFLAKE_DATABASE}")
+        # Store reference to the underlying connection for backward compatibility
+        self.conn = self.sf_connection.connection
 
     def disconnect(self):
         """Close Snowflake connection."""
-        if self.conn:
-            self.conn.close()
-            logger.info("✓ Disconnected from Snowflake")
+        if self.sf_connection:
+            self.sf_connection.disconnect()
+            self.conn = None
 
     def _execute(
         self, sql: str, async_exec: bool = False
@@ -449,8 +400,8 @@ class SnowflakeBenchmark:
             "error_message": error_message or "",
         }
 
-        # Log to CSV immediately
-        self._log_result(result)
+        # Log to DuckDB immediately
+        self.storage.write_result(result)
 
         return result
 
@@ -482,30 +433,6 @@ class SnowflakeBenchmark:
             "error_message": error_message,
         }
 
-    def _init_csv(self):
-        """Initialize CSV file for results - append mode or create new with headers."""
-        file_exists = self.csv_file.exists()
-        self.csv_handle = open(self.csv_file, "a", newline="")
-        self.csv_writer = csv.DictWriter(self.csv_handle, fieldnames=CSV_COLUMNS)
-
-        # Write header only if file is new
-        if not file_exists:
-            self.csv_writer.writeheader()
-            logger.info(f"✓ Created new results file: {self.csv_file}")
-        else:
-            logger.info(f"✓ Appending results to: {self.csv_file}")
-
-    def _log_result(self, result: Dict[str, Any]):
-        """Log a single result to CSV (thread-safe)."""
-        if self.csv_writer:
-            with csv_lock:
-                self.csv_writer.writerow(result)
-                self.csv_handle.flush()  # Flush immediately to ensure data is written
-
-    def _close_csv(self):
-        """Close CSV file."""
-        if self.csv_handle:
-            self.csv_handle.close()
 
     def run_warehouse_benchmark(
         self,
@@ -608,7 +535,7 @@ class SnowflakeBenchmark:
         if not parallel:
             self.connect()
 
-        self._init_csv()
+        # DuckDB is initialized globally, no need for _init_csv()
 
         # Create warehouses after connection
         if not parallel:
@@ -637,15 +564,14 @@ class SnowflakeBenchmark:
                         scale_factor=self.scale_factor,
                         run_id=self.run_id,  # Share the same run_id
                     )
-                    instance.csv_file = self.csv_file  # Share the same CSV file
-                    instance.created_warehouses = self.created_warehouses  # Share warehouse list
+                    # Share warehouse list for cleanup
+                    instance.created_warehouses = self.created_warehouses
                     benchmark_instances[warehouse_size] = instance
 
                 try:
                     # Connect all instances
                     for warehouse_size, instance in benchmark_instances.items():
                         instance.connect()
-                        instance._init_csv()
 
                     # Use ThreadPoolExecutor to run warehouses in parallel
                     with ThreadPoolExecutor(max_workers=len(warehouse_sizes)) as executor:
