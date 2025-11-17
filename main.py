@@ -2,19 +2,13 @@
 """
 Main Orchestrator for Snowflake vs Databricks TPC-H Benchmark
 
-Runs three types of benchmarks:
-1. Sequential: Run all queries once, one after another
-2. Concurrent: Submit all queries at once to test queue processing
-3. Cold Start: Test cold warehouse performance on queries 1-5
+Runs benchmarks sequentially: Snowflake first, then Databricks.
 """
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List
-import os
 
 # Add project root to path for common imports
 project_root = Path(__file__).parent
@@ -25,226 +19,99 @@ from common.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def run_sequential_benchmark(
+def run_benchmark(
     warehouse_sizes_snow: Optional[List[str]] = None,
     warehouse_sizes_dbx: Optional[List[str]] = None,
     query_nums: Optional[List[int]] = None,
 ):
     """
-    Run sequential benchmark: Execute all queries once, one after another.
-
-    Both Snowflake and Databricks benchmarks run concurrently (in parallel threads),
-    but within each platform, queries execute sequentially.
+    Run benchmark: Execute queries on Snowflake first, then Databricks.
 
     Args:
-        warehouse_sizes_snow: Snowflake warehouse sizes (default: ["small", "medium", "xlarge"])
-        warehouse_sizes_dbx: Databricks warehouse sizes (default: ["xsmall", "small", "large"])
+        warehouse_sizes_snow: Snowflake warehouse sizes (default: ["medium"])
+        warehouse_sizes_dbx: Databricks warehouse sizes (default: ["small"])
         query_nums: Query numbers to run (default: all 1-22)
     """
-    logger.info("🚀 Starting Sequential Benchmark")
+    logger.info("🚀 Starting Benchmark")
     logger.info("=" * 80)
 
-    # Build command arguments
-    query_arg = []
-    if query_nums:
-        query_arg = ["--queries", ",".join(map(str, query_nums))]
+    # Import benchmark classes
+    from snowflake.benchmark import SnowflakeBenchmark
+    from databricks.benchmark import DatabricksBenchmark
 
-    def run_snowflake():
-        """Run Snowflake sequential benchmark"""
-        logger.info("❄️  Initializing Snowflake benchmark...")
-
-        cmd = [
-            "uv", "run", "python", "benchmark.py",
-            "--runs", "1",
-            "--sequential",
-        ]
-        if warehouse_sizes_snow:
-            for wh in warehouse_sizes_snow:
-                cmd.extend(["--warehouse", wh])
-        cmd.extend(query_arg)
-
-        result = subprocess.run(
-            cmd,
-            cwd=project_root / "snowflake",
-            capture_output=False,  # Let output stream to console
-            text=True
+    # Run Snowflake first
+    logger.info("\n❄️  Running Snowflake benchmark...")
+    try:
+        sf_benchmark = SnowflakeBenchmark()
+        sf_benchmark.run_benchmark(
+            warehouse_sizes=warehouse_sizes_snow,
+            query_nums=query_nums,
+            num_runs=1,
+            parallel=False,  # Run sequentially within Snowflake
         )
+        logger.info("✅ Snowflake benchmark completed")
+    except Exception as e:
+        logger.error(f"❌ Snowflake benchmark failed: {e}", exc_info=True)
+        raise
 
-        if result.returncode == 0:
-            logger.info("✅ Snowflake sequential benchmark completed")
-        else:
-            raise Exception(f"Snowflake benchmark failed with exit code {result.returncode}")
-        return "snowflake"
-
-    def run_databricks():
-        """Run Databricks sequential benchmark"""
-        logger.info("🧱 Initializing Databricks benchmark...")
-
-        # Source ~/.zshrc for databricks credentials as per CLAUDE.md
-        source_cmd = "source ~/.zshrc && "
-
-        cmd = [
-            "uv", "run", "python", "benchmark.py",
-            "--runs", "1",
-            "--sequential",
-        ]
-        if warehouse_sizes_dbx:
-            for wh in warehouse_sizes_dbx:
-                cmd.extend(["--warehouse", wh])
-        cmd.extend(query_arg)
-
-        # Run with sourced environment
-        full_cmd = source_cmd + " ".join(cmd)
-        result = subprocess.run(
-            full_cmd,
-            cwd=project_root / "databricks",
-            capture_output=False,  # Let output stream to console
-            text=True,
-            shell=True,
-            executable="/bin/zsh"
+    # Run Databricks second
+    logger.info("\n🧱 Running Databricks benchmark...")
+    try:
+        dbx_benchmark = DatabricksBenchmark()
+        dbx_benchmark.run_benchmark(
+            warehouse_sizes=warehouse_sizes_dbx,
+            query_nums=query_nums,
+            num_runs=1,
+            parallel=False,  # Run sequentially within Databricks
         )
+        logger.info("✅ Databricks benchmark completed")
+    except Exception as e:
+        logger.error(f"❌ Databricks benchmark failed: {e}", exc_info=True)
+        raise
 
-        if result.returncode == 0:
-            logger.info("✅ Databricks sequential benchmark completed")
-        else:
-            raise Exception(f"Databricks benchmark failed with exit code {result.returncode}")
-        return "databricks"
-
-    # Run both platforms concurrently using ThreadPoolExecutor
-    logger.info("🔄 Running Snowflake and Databricks benchmarks concurrently...")
-    logger.info("   (Queries within each platform run sequentially)")
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {
-            executor.submit(run_snowflake): "snowflake",
-            executor.submit(run_databricks): "databricks",
-        }
-
-        for future in as_completed(futures):
-            platform = futures[future]
-            try:
-                result = future.result()
-                logger.info(f"✅ {platform.capitalize()} thread completed successfully")
-            except Exception as e:
-                logger.error(f"❌ {platform.capitalize()} benchmark failed: {e}", exc_info=True)
-
+    logger.info("\n" + "=" * 80)
+    logger.info("✅ All benchmarks completed")
     logger.info("=" * 80)
-    logger.info("✅ Sequential Benchmark completed")
 
 
-def run_concurrent_benchmark(
-    warehouse_sizes_snow: Optional[List[str]] = None,
-    warehouse_sizes_dbx: Optional[List[str]] = None,
-    query_nums: Optional[List[int]] = None,
-):
-    """
-    Run concurrent benchmark: Submit all queries at once to test queue processing.
-
-    This will test how well Snowflake and Databricks handle concurrent query loads.
-    All queries are submitted simultaneously, and the warehouse processes them
-    according to its queuing and concurrency capabilities.
-
-    Implementation Plan:
-    - Use ThreadPoolExecutor with max_workers = number of queries
-    - Submit all queries to the warehouse at once
-    - Measure queue time, execution time, and total time
-    - Compare how each platform handles query queuing and prioritization
-
-    Args:
-        warehouse_sizes_snow: Snowflake warehouse sizes to test
-        warehouse_sizes_dbx: Databricks warehouse sizes to test
-        query_nums: Query numbers to run concurrently (default: all 1-22)
-
-    Note: This is a placeholder for future implementation.
-    """
-    logger.info("🚧 Concurrent Benchmark - Not yet implemented")
-    logger.info("   This will submit all queries simultaneously to test queue processing")
-    pass
-
-
-def run_cold_start_benchmark(
-    query_nums: Optional[List[int]] = None,
-):
-    """
-    Run cold start benchmark: Test warehouse cold start performance.
-
-    Measures the performance impact of starting a warehouse from a completely
-    cold state. Typically runs queries 1-5 to get a representative sample.
-
-    Implementation Plan:
-    - For Snowflake: Create a fresh warehouse for each run
-    - For Databricks: Use stop_start_warehouses=True to force cold starts
-    - Measure warehouse startup time separately from query execution time
-    - Compare cold vs warm performance characteristics
-    - Track time to first byte and total execution time
-
-    Args:
-        query_nums: Query numbers to run (default: 1-5 for cold start testing)
-
-    Note: This is a placeholder for future implementation.
-    """
-    logger.info("❄️  Cold Start Benchmark - Not yet implemented")
-    logger.info("   This will test performance on completely cold warehouses (queries 1-5)")
-    pass
 
 
 def main():
     """
     Main entry point for the benchmark orchestrator.
 
-    Parses command-line arguments and runs the requested benchmark scenarios.
+    Parses command-line arguments and runs benchmarks.
     """
     parser = argparse.ArgumentParser(
         description="Snowflake vs Databricks TPC-H Benchmark Orchestrator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run all benchmarks (default)
+  # Run benchmark with default medium size
   python main.py
 
-  # Run only sequential benchmark
-  python main.py --sequential
-
-  # Run concurrent benchmark when implemented
-  python main.py --concurrent
-
-  # Run cold start benchmark when implemented
-  python main.py --cold-start
-
-  # Run specific combinations
-  python main.py --sequential --cold-start
+  # Run with large warehouse (xlarge for Snowflake, large for Databricks)
+  python main.py --warehouse-size large
 
   # Run with specific queries
-  python main.py --sequential --queries 1,2,3
-  python main.py --sequential --queries 1-5
+  python main.py --queries 1,2,3 --warehouse-size large
+  python main.py --queries 1-5 --warehouse-size medium
         """,
     )
 
-    parser.add_argument(
-        "--sequential",
-        action="store_true",
-        help="Run sequential benchmark (queries run one after another)",
-    )
-    parser.add_argument(
-        "--concurrent",
-        action="store_true",
-        help="Run concurrent benchmark (all queries submitted at once)",
-    )
-    parser.add_argument(
-        "--cold-start",
-        action="store_true",
-        help="Run cold start benchmark (queries 1-5 on cold warehouses)",
-    )
     parser.add_argument(
         "--queries",
         type=str,
         help="Comma-separated query numbers to run (e.g., '1,2,3' or '1-5')",
     )
+    parser.add_argument(
+        "--warehouse-size",
+        type=str,
+        choices=["small", "medium", "large"],
+        help="Warehouse size to use (automatically maps: small→small/xsmall, medium→medium/small, large→xlarge/large)",
+    )
 
     args = parser.parse_args()
-
-    # If no specific benchmark is selected, run all
-    run_all = not (args.sequential or args.concurrent or args.cold_start)
 
     # Parse query numbers if provided
     query_nums = None
@@ -266,38 +133,45 @@ Examples:
     logger.info("🚀 Snowflake vs Databricks TPC-H Benchmark")
     logger.info("=" * 80)
 
-    # Default warehouse sizes: medium for Snowflake, small for Databricks (equivalent)
-    warehouse_sizes_snow = ["medium"]
-    warehouse_sizes_dbx = ["small"]
+    # Map warehouse size to platform-specific sizes
+    # The mapping ensures equivalent compute power across platforms
+    warehouse_size_mapping = {
+        "small": {
+            "snowflake": "small",
+            "databricks": "xsmall",
+        },
+        "medium": {
+            "snowflake": "medium",
+            "databricks": "small",
+        },
+        "large": {
+            "snowflake": "xlarge",
+            "databricks": "large",
+        },
+    }
+
+    # Determine warehouse sizes based on command-line argument or defaults
+    if args.warehouse_size:
+        size_key = args.warehouse_size
+        warehouse_sizes_snow = [warehouse_size_mapping[size_key]["snowflake"]]
+        warehouse_sizes_dbx = [warehouse_size_mapping[size_key]["databricks"]]
+        logger.info(f"Using warehouse size: {size_key}")
+        logger.info(f"  → Snowflake: {warehouse_sizes_snow[0]}")
+        logger.info(f"  → Databricks: {warehouse_sizes_dbx[0]}")
+    else:
+        # Default warehouse sizes: medium for Snowflake, small for Databricks (equivalent)
+        warehouse_sizes_snow = ["medium"]
+        warehouse_sizes_dbx = ["small"]
 
     try:
-        # Run sequential benchmark
-        if args.sequential or run_all:
-            run_sequential_benchmark(
-                warehouse_sizes_snow=warehouse_sizes_snow,
-                warehouse_sizes_dbx=warehouse_sizes_dbx,
-                query_nums=query_nums
-            )
-            logger.info("")
+        # Run benchmark (Snowflake first, then Databricks)
+        run_benchmark(
+            warehouse_sizes_snow=warehouse_sizes_snow,
+            warehouse_sizes_dbx=warehouse_sizes_dbx,
+            query_nums=query_nums
+        )
 
-        # Run concurrent benchmark
-        if args.concurrent or run_all:
-            run_concurrent_benchmark(
-                warehouse_sizes_snow=warehouse_sizes_snow,
-                warehouse_sizes_dbx=warehouse_sizes_dbx,
-                query_nums=query_nums
-            )
-            logger.info("")
-
-        # Run cold start benchmark
-        if args.cold_start or run_all:
-            run_cold_start_benchmark(query_nums=query_nums)
-            logger.info("")
-
-        logger.info("=" * 80)
-        logger.info("✅ All requested benchmarks completed")
-        logger.info("=" * 80)
-        logger.info("📊 Results stored in: benchmark_results.duckdb")
+        logger.info("\n📊 Results stored in: benchmark_results.duckdb")
         logger.info("📝 Logs available in:")
         logger.info("   - logs/snowflake.log (Snowflake-specific logs)")
         logger.info("   - logs/databricks.log (Databricks-specific logs)")

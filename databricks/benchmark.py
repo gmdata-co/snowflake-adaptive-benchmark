@@ -201,9 +201,14 @@ class DatabricksBenchmark:
             warehouse_id: ID of warehouse to destroy
             warehouse_name: Name of warehouse (for logging)
         """
+        import time
+
         logger.info(f"Destroying warehouse: {warehouse_name} (ID: {warehouse_id})")
 
         try:
+            # Add a small delay to ensure all connections have closed
+            time.sleep(2)
+
             self._ensure_workspace_client()
             self.workspace_client.warehouses.delete(id=warehouse_id)
             logger.info(f"✅ Destroyed warehouse: {warehouse_name}")
@@ -473,10 +478,12 @@ class DatabricksBenchmark:
                 # If we can't get the statement_id, log warning but continue
                 logger.warning(f"{log_prefix} Failed to capture statement_id: {e}")
 
-            # Fetch all results to get accurate row count
-            results = cursor.fetchall()
-            rows_produced = len(results)
+            # Close cursor immediately - don't fetch results for benchmarking
+            # We only care about query execution time, not data transfer time
             cursor.close()
+
+            # Row count not available (not fetching results)
+            rows_produced = -1
 
         except Exception as e:
             error_message = str(e)
@@ -486,7 +493,7 @@ class DatabricksBenchmark:
 
         if error_message is None:
             logger.info(
-                f"{log_prefix} ✅ {execution_time:.2f}s ({rows_produced:,} rows)"
+                f"{log_prefix} ✅ {execution_time:.2f}s"
             )
             # Mark warehouse as started and track this query
             self.warehouse_started = True
@@ -632,7 +639,8 @@ class DatabricksBenchmark:
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {len(query_nums)} queries")
         logger.info(f"Runs per query: {num_runs}")
-        logger.info(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
+        logger.info(f"Warehouse execution: {'Parallel' if parallel else 'Sequential'}")
+        logger.info(f"Query execution: Sequential (one query at a time per warehouse)")
         logger.info(
             f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}"
         )
@@ -715,12 +723,17 @@ class DatabricksBenchmark:
                                 }
 
                 finally:
-                    # Disconnect all instances
+                    # Disconnect all instances BEFORE warehouse cleanup
+                    logger.info("\n🔌 Closing all connections...")
                     for instance in benchmark_instances.values():
                         instance.disconnect()
 
+                    # Add a small delay to ensure connections are fully closed
+                    import time
+                    time.sleep(3)
+
         finally:
-            # Always clean up warehouses
+            # Always clean up warehouses (after connections are closed)
             self._destroy_all_warehouses()
 
         logger.info("\n" + "=" * 70)
@@ -756,7 +769,7 @@ def main():
     parser.add_argument(
         "--sequential",
         action="store_true",
-        help="Run warehouses sequentially instead of in parallel (default: parallel)",
+        help="Run warehouses sequentially instead of in parallel. Queries always run sequentially within each warehouse (default: parallel warehouses)",
     )
     parser.add_argument(
         "--scale-factor",

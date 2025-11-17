@@ -63,8 +63,10 @@ class BenchmarkStorage:
 
     Creates and manages:
     - snowflake_results table for Snowflake benchmark data
-    - databricks_results table for Databricks benchmark data (future)
-    - latest_run view that shows the most recent benchmark run
+    - databricks_results table for Databricks benchmark data
+
+    Note: Views for latest runs and comparisons are managed via SQL files
+    in common/transformations/ - run common/run_transformations.sh to create them.
     """
 
     def __init__(self, db_path: Path):
@@ -180,20 +182,6 @@ class BenchmarkStorage:
                     credits_used_cloud_services DOUBLE,
                     total_elapsed_time_ms DOUBLE
                 )
-            """)
-
-            # Create latest_run view
-            conn.execute("""
-                CREATE OR REPLACE VIEW latest_run AS
-                SELECT *
-                FROM snowflake_results
-                WHERE run_id = (
-                    SELECT run_id
-                    FROM snowflake_results
-                    ORDER BY timestamp DESC
-                    LIMIT 1
-                )
-                ORDER BY timestamp
             """)
 
             logger.info(f"Initialized DuckDB database at {self.db_path}")
@@ -350,6 +338,7 @@ class BenchmarkStorage:
         credits_used_compute: Optional[float] = None,
         credits_used_cloud_services: Optional[float] = None,
         total_elapsed_time_ms: Optional[float] = None,
+        rows_produced: Optional[int] = None,
     ):
         """
         Update enrichment data for a specific Databricks query.
@@ -364,6 +353,7 @@ class BenchmarkStorage:
             credits_used_compute: DBU credits used (approximate)
             credits_used_cloud_services: Cloud services credits used (if applicable)
             total_elapsed_time_ms: Total elapsed time from system tables
+            rows_produced: Number of rows produced by the query (from system.query.history)
         """
         def _update_operation(conn):
             conn.execute("""
@@ -374,7 +364,8 @@ class BenchmarkStorage:
                     bytes_scanned = ?,
                     credits_used_compute = ?,
                     credits_used_cloud_services = ?,
-                    total_elapsed_time_ms = ?
+                    total_elapsed_time_ms = ?,
+                    rows_produced = ?
                 WHERE query_id = ?
             """, [
                 compilation_time_ms,
@@ -383,6 +374,7 @@ class BenchmarkStorage:
                 credits_used_compute,
                 credits_used_cloud_services,
                 total_elapsed_time_ms,
+                rows_produced,
                 query_id,
             ])
             return None

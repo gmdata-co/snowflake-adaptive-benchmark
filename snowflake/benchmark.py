@@ -524,7 +524,8 @@ class SnowflakeBenchmark:
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {len(query_nums)} queries")
         logger.info(f"Runs per query: {num_runs}")
-        logger.info(f"Execution mode: {'Parallel' if parallel else 'Sequential'}")
+        logger.info(f"Warehouse execution: {'Parallel' if parallel else 'Sequential'}")
+        logger.info(f"Query execution: Sequential (one query at a time per warehouse)")
         logger.info(
             f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}"
         )
@@ -547,7 +548,10 @@ class SnowflakeBenchmark:
                     self.run_warehouse_benchmark(warehouse_size, query_nums, num_runs)
             else:
                 # Parallel execution across warehouses
-                logger.info("\n🚀 Launching parallel execution across all warehouses...")
+                if len(warehouse_sizes) > 1:
+                    logger.info("\n🚀 Launching parallel execution across all warehouses...")
+                else:
+                    logger.info(f"\n🚀 Starting benchmark on {warehouse_sizes[0]} warehouse...")
 
                 # Connect the main instance first to create warehouses
                 self.connect()
@@ -624,7 +628,8 @@ class SnowflakeBenchmark:
         logger.info("\nNext steps:")
         logger.info("1. Wait 45 minutes for ACCOUNT_USAGE to populate")
         logger.info("2. Run: uv run snowflake/enrich_results.py")
-        logger.info("3. Query latest results: SELECT * FROM latest_run;")
+        logger.info("3. Run: uv run common/transformations/run_transformations.py")
+        logger.info("4. Query results: SELECT * FROM platform_comparison;")
 
 
 def main():
@@ -656,7 +661,7 @@ def main():
     parser.add_argument(
         "--sequential",
         action="store_true",
-        help="Run warehouses sequentially instead of in parallel (default: parallel)",
+        help="Run warehouses sequentially instead of in parallel. Queries always run sequentially within each warehouse (default: parallel warehouses)",
     )
     parser.add_argument(
         "--scale-factor",

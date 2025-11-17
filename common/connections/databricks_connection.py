@@ -94,9 +94,16 @@ class DatabricksConnection(BaseConnection):
     def disconnect(self) -> None:
         """Close Databricks connection."""
         if self.connection:
-            self.connection.close()
-            self.connection = None
-            logger.info("✅ Disconnected from Databricks")
+            try:
+                # Close connection with a short timeout to prevent hanging during shutdown
+                self.connection.close()
+                logger.info("✅ Disconnected from Databricks")
+            except Exception as e:
+                # During Python shutdown, sys.meta_path may be None
+                # Log warning but don't fail - connection will be cleaned up by OS
+                logger.warning(f"⚠️  Error during Databricks disconnect (may be normal during shutdown): {e}")
+            finally:
+                self.connection = None
 
     def execute_query(self, query: str, **kwargs) -> Any:
         """

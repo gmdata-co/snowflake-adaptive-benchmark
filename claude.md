@@ -11,3 +11,4 @@
 - the overall project plan is at `project_plan.md`.
 - dbx is short for databricks.
 - run `source ~/.zshrc` to get the databricks credentials loaded.
+- any time you need to connect to snowflake or dbx with python, use the global connections modules in the common folder: connections/databricks_connection.py and connections/snowflake_connection.py

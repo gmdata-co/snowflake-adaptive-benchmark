@@ -419,6 +419,7 @@ class DatabricksResultsEnricher:
                     credits_used_compute=cost,  # Approximate DBU cost
                     credits_used_cloud_services=None,  # Not applicable for Databricks
                     total_elapsed_time_ms=history.get('execution_time_ms'),
+                    rows_produced=history.get('produced_rows'),  # Fetch row count from system table
                 )
                 enriched_count += 1
 

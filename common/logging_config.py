@@ -44,7 +44,7 @@ def setup_logging():
 
     if HAS_COLORLOG:
         console_formatter = colorlog.ColoredFormatter(
-            fmt="%(log_color)s%(levelname)-8s%(reset)s %(name)s: %(message)s",
+            fmt="%(asctime)s | %(log_color)s%(levelname)-8s%(reset)s | %(name)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
             reset=True,
             log_colors={
@@ -57,7 +57,8 @@ def setup_logging():
         )
     else:
         console_formatter = logging.Formatter(
-            fmt="%(levelname)-8s %(name)s: %(message)s"
+            fmt="%(asctime)s | %(levelname)-8s | %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
     console_handler.setFormatter(console_formatter)
