@@ -3,7 +3,7 @@
 ## 1. Context from Industry Benchmarks
 
 **Key Findings:**
-- Most common scale: SF100 (100GB) for practical comparisons
+- Most common scale: SF1000 (1TB) for practical comparisons
 - TPC-H: 22 queries, 8 tables - simpler than TPC-DS (99 queries)
 - Independent sources: [Fivetran (March 2025)](https://www.fivetran.com/blog/warehouse-benchmark), [Nitor Infotech](https://www.nitorinfotech.com/blog/snowflake-vs-databricks-sql-warehouse-a-deep-dive-into-performance-and-cost/)
 - **Fivetran approach:** Did NOT use clustering keys or advanced features - focused on default performance
@@ -29,9 +29,9 @@
 
 ---
 
-## 3. Dataset: TPC-H SF100 (100GB)
+## 3. Dataset: TPC-H SF1000 (1TB)
 
-**Snowflake:** Pre-loaded at `SNOWFLAKE_SAMPLE_DATA.TPCH_SF100`  
+**Snowflake:** Pre-loaded at `SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000`
 **Databricks:** Generate using [tpch-dbgen](https://github.com/databricks/tpch-dbgen) or [spark-sql-perf](https://github.com/databricks/spark-sql-perf), store in Delta Lake
 
 ---
@@ -39,7 +39,7 @@
 ## 4. Test Scenarios
 
 ### Scenario 1: Primary Comparison
-**Snowflake:** Medium warehouse, SNOWFLAKE_SAMPLE_DATA.TPCH_SF100 (pre-sorted), auto-suspend 2 min  
+**Snowflake:** Medium warehouse, SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000 (pre-sorted), auto-suspend 2 min
 **Databricks:** Small SQL warehouse, Delta Lake with data pre-sorted (matching Snowflake's sort order)
 
 **Test:** All 22 TPC-H queries × 4 runs (1 cold + 3 warm)
@@ -51,11 +51,11 @@
 
 ---
 
-## 5. Recommended Warehouse Sizes for SF100
+## 5. Recommended Warehouse Sizes for SF1000
 
 | Test Purpose | Snowflake | Databricks | Why |
 |--------------|-----------|------------|-----|
-| **Primary** | Medium (M) | Small | Most common for 100GB, cost/performance balance |
+| **Primary** | Medium (M) | Small | Most common for 1TB, cost/performance balance |
 | Budget | Small (S) | X-Small | Low-cost comparison |
 | Performance | X-Large (XL) | Large | Best-case ceiling |
 
@@ -67,13 +67,13 @@
 
 **Query Tagging:**
 ```sql
-ALTER SESSION SET QUERY_TAG = 'tpch_sf100_primary_q01_run1';
--- Or: /* BENCHMARK: tpch_sf100_primary_q01_run1 */
+ALTER SESSION SET QUERY_TAG = 'tpch_sf1000_primary_q01_run1';
+-- Or: /* BENCHMARK: tpch_sf1000_primary_q01_run1 */
 ```
 
 **Query History & Duration:**
 ```sql
-SELECT 
+SELECT
     query_id, query_tag, warehouse_name, warehouse_size,
     start_time, end_time,
     total_elapsed_time/1000 as execution_time_sec,
@@ -82,7 +82,7 @@ SELECT
     bytes_scanned, rows_produced,
     credits_used_cloud_services
 FROM snowflake.account_usage.query_history
-WHERE query_tag LIKE 'tpch_sf100%'
+WHERE query_tag LIKE 'tpch_sf1000%'
 ORDER BY start_time;
 ```
 
@@ -102,7 +102,7 @@ WHERE warehouse_name = 'BENCHMARK_WH' AND start_time >= '2025-11-01';
 
 **Query Tagging:**
 ```sql
-/* BENCHMARK: tpch_sf100_primary_q01_run1 */
+/* BENCHMARK: tpch_sf1000_primary_q01_run1 */
 ```
 
 **Query History & Duration:**
@@ -114,7 +114,7 @@ SELECT statement_id, statement_text, warehouse_id, executed_by,
     rows_produced, read_bytes, bytes_produced,
     compute_time_ms, error_message
 FROM system.query.history
-WHERE statement_text LIKE '%BENCHMARK: tpch_sf100%'
+WHERE statement_text LIKE '%BENCHMARK: tpch_sf1000%'
   AND start_time >= '2025-11-01'
 ORDER BY start_time;
 ```
@@ -175,8 +175,8 @@ ORDER BY usage_start_time;
 
 ### Phase 1: Preparation
 - [ ] Set up Databricks workspace
-- [ ] Generate TPC-H SF100 in Databricks with pre-sorting (Delta Lake)
-- [ ] Validate Snowflake TPCH_SF100 access
+- [ ] Generate TPC-H SF1000 in Databricks with pre-sorting (Delta Lake)
+- [ ] Validate Snowflake TPCH_SF1000 access
 - [ ] Create warehouses with 2-min auto-suspend
 - [ ] Prepare query scripts (22 TPC-H queries with tags)
 - [ ] Set up result tracking spreadsheet
@@ -203,7 +203,7 @@ ORDER BY usage_start_time;
 **Data:**
 - ⚠️ Snowflake's `SNOWFLAKE_SAMPLE_DATA` is a read-only share (cannot modify)
 - ✅ Pre-sort Databricks data to match Snowflake's ordering for fair comparison
-- ⚠️ Databricks default sample is only 5GB (too small - use generated SF100)
+- ⚠️ Databricks default sample is only 5GB (too small - use generated SF1000)
 - ⚠️ Document data generation time/cost separately
 
 **Execution:**
@@ -212,7 +212,7 @@ ORDER BY usage_start_time;
 - ⚠️ Minor TPC-H query syntax adjustments may be needed
 
 **Cost Tracking:**
-- ✅ Tag ALL queries consistently: `tpch_sf100_primary_q{##}_run{#}`
+- ✅ Tag ALL queries consistently: `tpch_sf1000_primary_q{##}_run{#}`
 - ✅ Use ACCOUNT_USAGE for Snowflake (45 min delay)
 - ✅ Export data immediately after each session
 

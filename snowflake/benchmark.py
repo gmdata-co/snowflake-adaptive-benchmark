@@ -22,12 +22,10 @@ import snowflake.connector
 from snowflake.connector import DictCursor
 from common.connections import SnowflakeConnection
 from common.storage import BenchmarkStorage
+# Initialize centralized logging
+from common.logging_config import get_logger
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 from config import (
     SNOWFLAKE_CONNECTION,
@@ -171,7 +169,7 @@ class SnowflakeBenchmark:
         # Switch back to BENCHMARK role
         self._execute(f"USE ROLE {SNOWFLAKE_ROLE}")
 
-        logger.info(f"✓ Created warehouse: {warehouse_name}")
+        logger.info(f"✅ Created warehouse: {warehouse_name}")
         self.created_warehouses.append(warehouse_name)
 
         return warehouse_name
@@ -188,9 +186,9 @@ class SnowflakeBenchmark:
         try:
             drop_sql = f"DROP WAREHOUSE IF EXISTS {warehouse_name}"
             self._execute(drop_sql)
-            logger.info(f"✓ Destroyed warehouse: {warehouse_name}")
+            logger.info(f"✅ Destroyed warehouse: {warehouse_name}")
         except Exception as e:
-            logger.error(f"✗ Failed to destroy warehouse {warehouse_name}: {e}")
+            logger.error(f"❌ Failed to destroy warehouse {warehouse_name}: {e}")
 
     def _create_all_warehouses(self, warehouse_sizes: List[str]):
         """
@@ -322,15 +320,16 @@ class SnowflakeBenchmark:
         }
 
         # Include warehouse size in log output for clarity in parallel execution
+        platform_prefix = "[SNOWFLAKE]"
         wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
         # Use logger but print without newline by constructing the message and printing later
-        log_prefix = f"{wh_prefix} [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}"
+        log_prefix = f"{platform_prefix} {wh_prefix} [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}"
 
         # Load query SQL
         try:
             query_sql = self.load_query(query_num)
         except FileNotFoundError as e:
-            logger.error(f"{log_prefix} ✗ Error: {e}")
+            logger.error(f"{log_prefix} ❌ Error: {e}")
             return self._create_error_result(
                 query_num,
                 run_num,
@@ -370,13 +369,13 @@ class SnowflakeBenchmark:
 
         except Exception as e:
             error_message = str(e)
-            logger.error(f"{log_prefix} ✗ Error: {error_message[:50]}")
+            logger.error(f"{log_prefix} ❌ Error: {error_message[:50]}")
 
         execution_time = time.time() - start_time
 
         if error_message is None:
             logger.info(
-                f"{log_prefix} ✓ {execution_time:.2f}s ({rows_produced:,} rows)"
+                f"{log_prefix} ✅ {execution_time:.2f}s ({rows_produced:,} rows)"
             )
             # Mark warehouse as started and track this query
             self.warehouse_started = True
@@ -476,7 +475,7 @@ class SnowflakeBenchmark:
                     )
 
             logger.info(
-                f"\n[{warehouse_size.upper()}] ✓ Completed all queries on {warehouse_name}"
+                f"\n[{warehouse_size.upper()}] ✅ Completed all queries on {warehouse_name}"
             )
 
             return {
@@ -487,7 +486,7 @@ class SnowflakeBenchmark:
             }
 
         except Exception as e:
-            logger.error(f"\n[{warehouse_size.upper()}] ✗ Error: {e}")
+            logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
             return {
                 "warehouse_size": warehouse_size,
                 "warehouse_name": warehouse_name,
@@ -506,14 +505,14 @@ class SnowflakeBenchmark:
         Run the complete benchmark across multiple warehouse sizes.
 
         Args:
-            warehouse_sizes: List of warehouse sizes to test (default: all)
+            warehouse_sizes: List of warehouse sizes to test (default: medium only)
             query_nums: List of query numbers to run (default: all 1-22)
             num_runs: Number of runs per query (default: 4)
             parallel: If True, run warehouses in parallel (default: True)
         """
-        # Default to all warehouses and queries if not specified
+        # Default to medium warehouse only (use --warehouse flag for multiple sizes)
         if warehouse_sizes is None:
-            warehouse_sizes = WAREHOUSE_SIZES
+            warehouse_sizes = ["medium"]
         if query_nums is None:
             query_nums = list(range(1, NUM_QUERIES + 1))
 
@@ -595,7 +594,7 @@ class SnowflakeBenchmark:
                                 results[warehouse_size] = result
                             except Exception as e:
                                 logger.error(
-                                    f"\n✗ Exception in {warehouse_size} warehouse: {e}"
+                                    f"\n❌ Exception in {warehouse_size} warehouse: {e}"
                                 )
                                 results[warehouse_size] = {
                                     "warehouse_size": warehouse_size,
@@ -635,7 +634,7 @@ def main():
         "--warehouse",
         choices=["small", "medium", "xlarge"],
         action="append",
-        help="Warehouse size(s) to test (can specify multiple times). Default: all",
+        help="Warehouse size(s) to test (can specify multiple times). Default: medium",
     )
     parser.add_argument(
         "--queries",
@@ -663,7 +662,7 @@ def main():
         "--scale-factor",
         type=int,
         default=SCALE_FACTOR,
-        help=f"TPC-H scale factor (default: {SCALE_FACTOR}). Common values: 100 (100GB), 1000 (1TB), 10000 (10TB)",
+        help=f"TPC-H scale factor (default: {SCALE_FACTOR}). Common values: 1000 (1TB), 10000 (10TB)",
     )
 
     args = parser.parse_args()

@@ -1,7 +1,6 @@
-- most of the queries run in 10 seconds on a medium. (100GB data) Should we use SF1000 (1TB) instead? Would be more expensive...
+- most of the queries run in 10 seconds on a medium. Should we use SF1000 (1TB)?
 
-  - Suggestion: Do a Small and Medium test on 100GB and XL on 1TB data?
-  - Answer: We will use the 1000SF (1TB) data set.
+  - Answer: We will use the SF1000 (1TB) data set.
 
 - should we do this in a free trial account? Do do this properly, we should suspend the WH for each new query. Could get expensive.
 

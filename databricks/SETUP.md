@@ -1,15 +1,37 @@
 # Databricks Setup Guide
 
-## Step 1: Get Your Databricks Credentials
+## Quick Start (Recommended)
 
-### Find Your Workspace URL
+Run the automated setup script from the **project root**:
+
+```bash
+uv run setup_config.py
+```
+
+This script will:
+1. ✓ Prompt for your Snowflake connection name
+2. ✓ Prompt for Databricks credentials
+3. ✓ Automatically discover your SQL warehouses
+4. ✓ Let you select which warehouses to use for each size
+5. ✓ Discover available catalogs and schemas
+6. ✓ Generate a configured `.env` file
+
+That's it! No manual copying of IDs required.
+
+---
+
+## Manual Setup (if needed)
+
+### Step 1: Get Your Databricks Credentials
+
+#### Find Your Workspace URL
 1. Log into your Databricks account
 2. Your workspace URL is in the browser address bar, something like:
    - AWS: `https://dbc-12345678-abcd.cloud.databricks.com`
    - Azure: `https://adb-12345678.12.azuredatabricks.net`
    - GCP: `https://12345678.9.gcp.databricks.com`
 
-### Create a Personal Access Token
+#### Create a Personal Access Token
 1. In your Databricks workspace, click your profile icon (top right)
 2. Go to **Settings** → **Developer** → **Access tokens**
 3. Click **Generate new token**
@@ -18,11 +40,11 @@
 6. Click **Generate**
 7. **IMPORTANT:** Copy the token immediately - you won't be able to see it again!
 
-## Step 2: Configure Authentication
+### Step 2: Configure Authentication
 
 Choose **ONE** of these methods:
 
-### Option A: Environment Variables (Quick Testing)
+#### Option A: Environment Variables (Quick Testing)
 ```bash
 export DATABRICKS_HOST='https://your-workspace.cloud.databricks.com'
 export DATABRICKS_TOKEN='dapi1234567890abcdef...'
@@ -30,7 +52,7 @@ export DATABRICKS_TOKEN='dapi1234567890abcdef...'
 
 Add these to your `~/.zshrc` or `~/.bashrc` to make them permanent.
 
-### Option B: Config File (Recommended)
+#### Option B: Config File (Recommended)
 Create `~/.databrickscfg`:
 ```ini
 [DEFAULT]
@@ -43,7 +65,7 @@ Set permissions:
 chmod 600 ~/.databrickscfg
 ```
 
-## Step 3: Test Connection
+### Step 3: Test Connection
 
 Run the test script:
 ```bash
@@ -55,7 +77,7 @@ You should see:
 - Your user info
 - List of available SQL warehouses
 
-## Step 4: Create SQL Warehouses (if needed)
+### Step 4: Create SQL Warehouses (if needed)
 
 You need 3 SQL warehouses for the benchmark:
 
@@ -65,7 +87,7 @@ You need 3 SQL warehouses for the benchmark:
 | Small | **Primary baseline** | Snowflake Medium | X-Small or Small |
 | Large | Performance ceiling | Snowflake X-Large | Medium or Large |
 
-### To Create a Warehouse:
+#### To Create a Warehouse:
 1. In Databricks, go to **SQL Warehouses** in the sidebar
 2. Click **Create SQL Warehouse**
 3. Configure:
@@ -76,30 +98,26 @@ You need 3 SQL warehouses for the benchmark:
 4. Click **Create**
 5. **Copy the warehouse ID** from the URL or warehouse details
 
-### Test SQL Connection:
+#### Test SQL Connection:
 ```bash
 uv run databricks/test_connection.py <warehouse-id>
 ```
 
-## Step 5: Update Configuration
+### Step 5: Update Configuration
 
-Edit [databricks/config.py](config.py) and update the `WAREHOUSES` dictionary with your warehouse IDs:
+Edit `.env` file in the project root and add your Databricks configuration:
 
-```python
-WAREHOUSES = {
-    "xsmall": "abc123def456",  # Your X-Small warehouse ID
-    "small": "ghi789jkl012",   # Your Small warehouse ID
-    "large": "mno345pqr678",   # Your Large warehouse ID
-}
+```bash
+export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+export DATABRICKS_TOKEN=dapi1234567890abcdef...
+export DATABRICKS_CATALOG=your_catalog
+export DATABRICKS_SCHEMA=your_schema
+export DATABRICKS_WAREHOUSE_XSMALL=abc123def456
+export DATABRICKS_WAREHOUSE_SMALL=ghi789jkl012
+export DATABRICKS_WAREHOUSE_LARGE=mno345pqr678
 ```
 
-Also update the catalog/schema settings if needed:
-```python
-CATALOG = "main"  # or your preferred catalog
-SCHEMA = "tpch_sf100"  # we'll create this next
-```
-
-## Step 6: Next Steps
+### Step 6: Next Steps
 
 Once connectivity is working:
 1. ✓ Generate TPC-H dataset in Databricks (coming next)

@@ -9,22 +9,24 @@ from dotenv import load_dotenv
 # Load environment variables from .env file automatically
 load_dotenv()
 
-# Snowflake connection settings (from .env file via SNOWFLAKE_CONNECTION environment variable)
+# Snowflake connection settings (from .env file)
 SNOWFLAKE_CONNECTION = os.getenv("SNOWFLAKE_CONNECTION")
-SNOWFLAKE_ROLE = "BENCHMARK"
-SNOWFLAKE_DATABASE = "BENCHMARK"
-SNOWFLAKE_SCHEMA = "PUBLIC"
+
+# Snowflake database objects (from .env file - user-specific)
+SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE")
+SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE")
+SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA")
 
 # Warehouse configurations
 # Warehouses are created dynamically per benchmark run with run_id suffix
-# e.g., BENCHMARK_WH_MEDIUM_001 for run_id 001
+# e.g., {SNOWFLAKE_WAREHOUSE_PREFIX}_{SIZE}_{RUN_ID}
 WAREHOUSE_SIZES = ["small", "medium", "xlarge"]
 WAREHOUSE_SIZE_MAP = {
     "small": "SMALL",
     "medium": "MEDIUM",
     "xlarge": "XLARGE",
 }
-WAREHOUSE_PREFIX = "BENCHMARK_WH"
+WAREHOUSE_PREFIX = os.getenv("SNOWFLAKE_WAREHOUSE_PREFIX")
 
 # Warehouse settings for dynamic creation
 WAREHOUSE_AUTO_SUSPEND = 120  # 2 minutes
@@ -32,9 +34,9 @@ WAREHOUSE_AUTO_RESUME = True
 WAREHOUSE_INITIALLY_SUSPENDED = True
 
 # Test parameters
-NUM_RUNS = 4  # Number of times to run each query
+NUM_RUNS = 1  # Number of times to run each query (default: 1 for faster benchmarks)
 NUM_QUERIES = 22  # All TPC-H queries
-SCALE_FACTOR = 1000  # TPC-H scale factor (100 = 100GB, 1000 = 1TB)
+SCALE_FACTOR = 1000  # TPC-H scale factor (1000 = 1TB, 10000 = 10TB)
 
 # Run type definitions (for parallel warehouse execution):
 # - "cold": First query on a warehouse (warehouse just started/resumed)

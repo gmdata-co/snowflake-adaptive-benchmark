@@ -24,10 +24,12 @@ Unlike Snowflake's approach of creating ephemeral warehouses, this benchmark:
 
 ## Usage
 
-### Basic Usage (Parallel, All Warehouses)
+### Basic Usage (Default: Small Warehouse Only)
 ```bash
 uv run python databricks/benchmark.py
 ```
+
+**Note:** By default, only the small warehouse is used. To test multiple sizes, use the `--warehouse` flag.
 
 ### Test with Single Query
 ```bash
@@ -45,8 +47,12 @@ uv run python databricks/benchmark.py --stop-start
 ```
 **Note**: This will stop all warehouses before the benchmark and start them as needed. Adds ~30 sec per warehouse but ensures true cold cache behavior.
 
-### Custom Warehouse Selection
+### Multiple Warehouse Sizes
 ```bash
+# Test all three warehouse sizes
+uv run python databricks/benchmark.py --warehouse xsmall --warehouse small --warehouse large
+
+# Test xsmall and small only
 uv run python databricks/benchmark.py --warehouse xsmall --warehouse small
 ```
 
@@ -66,7 +72,7 @@ WAREHOUSES = {
     "large": "e2ce84a538ff2ada",
 }
 
-NUM_RUNS = 4          # Runs per query
+NUM_RUNS = 1          # Runs per query (default)
 NUM_QUERIES = 22      # All TPC-H queries
 SCALE_FACTOR = 1000   # 1TB dataset
 ```

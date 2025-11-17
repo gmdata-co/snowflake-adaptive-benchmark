@@ -8,13 +8,14 @@ Adapt TPC-H queries for Snowflake.
 
 import logging
 import re
+import sys
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Parameter substitutions based on TPC-H specification defaults
 # These are standard substitution values used in TPC-H benchmarking
@@ -239,7 +240,7 @@ def process_queries():
             f.write(adapted)
             f.write("\n")
 
-        logger.info(f"  ✓ Query {i:2d} -> q{i:02d}.sql")
+        logger.info(f"  ✅ Query {i:2d} -> q{i:02d}.sql")
 
     logger.info("\nSuccessfully adapted 22 TPC-H queries!")
 

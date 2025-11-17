@@ -8,3 +8,4 @@ snowflake/export/gcs-service-account-key.json
 .env
 *.duckdb
 *.duckdb.wal
+.env copy

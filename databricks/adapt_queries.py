@@ -9,14 +9,15 @@ This script converts Snowflake TPC-H queries to Databricks syntax by:
 """
 
 import re
-from pathlib import Path
+import sys
 import logging
+from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import config
 from config import CATALOG, SCHEMA
@@ -55,8 +56,7 @@ def adapt_query(snowflake_sql: str) -> str:
     # Replace with: catalog.schema.table (lowercase)
 
     for table in TPCH_TABLES:
-        # Match patterns like: SNOWFLAKE_SAMPLE_DATA.TPCH_SF100.LINEITEM
-        # or TPCH_SF1000.LINEITEM
+        # Match patterns like: SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000.LINEITEM
         pattern = rf"SNOWFLAKE_SAMPLE_DATA\.TPCH_SF\d+\.{table}"
         replacement = f"{CATALOG}.{SCHEMA}.{table.lower()}"
         databricks_sql = re.sub(
@@ -145,11 +145,11 @@ def adapt_all_queries():
             with open(dest_path, "w") as f:
                 f.write(databricks_sql)
 
-            logger.info(f"✓ Adapted {query_file}")
+            logger.info(f"✅ Adapted {query_file}")
             success_count += 1
 
         except Exception as e:
-            logger.error(f"✗ Error adapting {query_file}: {e}")
+            logger.error(f"❌ Error adapting {query_file}: {e}")
             error_count += 1
 
     # Summary
@@ -160,7 +160,7 @@ def adapt_all_queries():
     logger.info(f"Errors: {error_count} queries")
 
     if success_count > 0:
-        logger.info(f"\n✓ Queries saved to: {DATABRICKS_QUERIES_DIR}")
+        logger.info(f"\n✅ Queries saved to: {DATABRICKS_QUERIES_DIR}")
         logger.info("\nNext steps:")
         logger.info("1. Review adapted queries for correctness")
         logger.info("2. Test a few queries against your Databricks data")

@@ -16,11 +16,10 @@ from pathlib import Path
 # Add parent directory to path so we can import common modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+from common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import config
 from config import (
@@ -88,10 +87,10 @@ def validate_row_counts():
                 max_count = int(expected_count * (1 + tolerance))
 
                 if min_count <= actual_count <= max_count:
-                    match = "✓"
+                    match = "✅"
                     status = "PASS"
                 else:
-                    match = "✗"
+                    match = "❌"
                     status = "FAIL"
                     all_valid = False
 
@@ -100,7 +99,7 @@ def validate_row_counts():
                 )
 
             except Exception as e:
-                logger.error(f"✗ {table:12s}: ERROR - {e}")
+                logger.error(f"❌ {table:12s}: ERROR - {e}")
                 all_valid = False
 
     finally:
@@ -149,10 +148,10 @@ def validate_table_properties():
                     )
                     all_valid = False
                 else:
-                    logger.info("  ✓ No partitioning (good for fair comparison)")
+                    logger.info("  ✅ No partitioning (good for fair comparison)")
 
             except Exception as e:
-                logger.error(f"  ✗ Error checking {table}: {e}")
+                logger.error(f"  ❌ Error checking {table}: {e}")
                 all_valid = False
 
     finally:
@@ -211,7 +210,7 @@ def run_sample_queries():
         for row in cursor.fetchall():
             logger.info(f"   {row[0]:11s} | {row[1]:11s} | {row[2]:>15,}")
 
-        logger.info("\n✓ Sample queries completed successfully")
+        logger.info("\n✅ Sample queries completed successfully")
 
     finally:
         connection.disconnect()
@@ -243,7 +242,7 @@ def main():
         logger.info("=" * 70)
 
         if counts_valid and props_valid:
-            logger.info("✓ All validations passed!")
+            logger.info("✅ All validations passed!")
             logger.info("\nNext steps:")
             logger.info("1. Review validation results above")
             logger.info("2. Ready to run benchmark: uv run databricks/benchmark.py")
@@ -256,7 +255,7 @@ def main():
             return 1
 
     except Exception as e:
-        logger.error(f"\n✗ Validation error: {e}")
+        logger.error(f"\n❌ Validation error: {e}")
         logger.info("\nTroubleshooting:")
         logger.info("1. Ensure TPC-H data has been generated")
         logger.info("2. Check DATABRICKS_HOST and DATABRICKS_TOKEN are set")

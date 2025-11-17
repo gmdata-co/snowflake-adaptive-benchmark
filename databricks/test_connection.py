@@ -6,14 +6,17 @@ This script helps you verify your Databricks connection and explore your workspa
 """
 
 import logging
+import sys
+from pathlib import Path
+
 from databricks import sql
 from databricks.sdk import WorkspaceClient
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def test_sdk_connection():
@@ -31,7 +34,7 @@ def test_sdk_connection():
 
         # Get current user info
         current_user = w.current_user.me()
-        logger.info("✓ Connected to Databricks!")
+        logger.info("✅ Connected to Databricks!")
         logger.info(f"  User: {current_user.user_name}")
         logger.info(f"  Display Name: {current_user.display_name}")
 
@@ -58,7 +61,7 @@ def test_sdk_connection():
         return True
 
     except Exception as e:
-        logger.error(f"✗ Failed to connect: {e}")
+        logger.error(f"❌ Failed to connect: {e}")
         logger.info("\n📋 Setup Instructions:")
         logger.info("1. Create a Databricks personal access token:")
         logger.info("   - Go to your Databricks workspace")
@@ -99,7 +102,7 @@ def test_sql_connection(warehouse_id: str = None):
         token = os.environ.get("DATABRICKS_TOKEN")
 
         if not host:
-            logger.error("✗ DATABRICKS_HOST environment variable not set")
+            logger.error("❌ DATABRICKS_HOST environment variable not set")
             return False
 
         # Build http_path for the warehouse
@@ -118,7 +121,7 @@ def test_sql_connection(warehouse_id: str = None):
                 )
                 result = cursor.fetchone()
 
-                logger.info("✓ SQL connection successful!")
+                logger.info("✅ SQL connection successful!")
                 logger.info(f"  User: {result[0]}")
                 logger.info(f"  Catalog: {result[1]}")
                 logger.info(f"  Schema: {result[2]}")
@@ -134,7 +137,7 @@ def test_sql_connection(warehouse_id: str = None):
                 return True
 
     except Exception as e:
-        logger.error(f"✗ SQL connection failed: {e}")
+        logger.error(f"❌ SQL connection failed: {e}")
         return False
 
 

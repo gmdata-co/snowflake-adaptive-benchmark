@@ -67,7 +67,7 @@ uv sync
 
 ### Basic Usage
 
-Run the complete benchmark (all 22 queries, 4 runs each, all warehouse sizes):
+Run the complete benchmark (all 22 queries, 1 run each, medium warehouse only):
 
 ```bash
 uv run snowflake/benchmark.py
@@ -75,22 +75,24 @@ uv run snowflake/benchmark.py
 
 This will:
 1. Generate a sequential run ID (001, 002, 003, etc.)
-2. Create warehouses with run ID suffix (e.g., `BENCHMARK_WH_MEDIUM_001`)
-3. Execute all queries across all warehouses
-4. Destroy warehouses at the end
-5. Save results to CSV
+2. Create medium warehouse with run ID suffix (e.g., `BENCHMARK_WH_MEDIUM_001`)
+3. Execute all queries on the medium warehouse
+4. Destroy warehouse at the end
+5. Save results to DuckDB
 
-The complete benchmark takes several hours to complete.
+**Default:** Medium warehouse only. To test multiple sizes, use `--warehouse` flag multiple times.
 
 ### Customize Benchmark Run
 
-#### Test a Single Warehouse
+#### Test Multiple Warehouse Sizes
 
 ```bash
-uv run snowflake/benchmark.py --warehouse medium
-```
+# Test all three warehouse sizes
+uv run snowflake/benchmark.py --warehouse small --warehouse medium --warehouse xlarge
 
-This creates only `BENCHMARK_WH_MEDIUM_001` for the run.
+# Test small and medium only
+uv run snowflake/benchmark.py --warehouse small --warehouse medium
+```
 
 #### Test Specific Queries
 
@@ -105,16 +107,13 @@ uv run snowflake/benchmark.py --queries "1"
 #### Adjust Number of Runs
 
 ```bash
-# Run only 2 iterations per query (1 cold + 1 warm)
-uv run snowflake/benchmark.py --runs 2
+# Run 4 iterations per query to test cold vs warm performance
+uv run snowflake/benchmark.py --runs 4
 ```
 
 #### Change Scale Factor
 
 ```bash
-# Use SF1000 (1TB dataset) instead of SF100 (100GB)
-uv run snowflake/benchmark.py --scale-factor 1000
-
 # Use SF10000 (10TB dataset)
 uv run snowflake/benchmark.py --scale-factor 10000
 ```
@@ -122,8 +121,8 @@ uv run snowflake/benchmark.py --scale-factor 10000
 #### Combine Options
 
 ```bash
-# Test query 1 on medium warehouse with 2 runs using SF1000
-uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2 --scale-factor 1000
+# Test query 1 on medium warehouse with 2 runs
+uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2
 ```
 
 ### Command-Line Options
@@ -131,7 +130,7 @@ uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2 --scale-
 ```
 --warehouse {small,medium,xlarge}
     Warehouse size(s) to test (can specify multiple times)
-    Default: all three sizes
+    Default: medium only
 
 --queries "1,3,5,..."
     Comma-separated list of query numbers to run
@@ -139,11 +138,11 @@ uv run snowflake/benchmark.py --warehouse medium --queries "1" --runs 2 --scale-
 
 --runs N
     Number of runs per query
-    Default: 4 (1 cold + 3 warm runs)
+    Default: 1 (single run per query)
 
 --scale-factor N
-    TPC-H scale factor (100 = 100GB, 1000 = 1TB, 10000 = 10TB)
-    Default: 100
+    TPC-H scale factor (1000 = 1TB, 10000 = 10TB)
+    Default: 1000
 
 --connection NAME
     Snowflake connection name from ~/.snowflake/connections.toml
@@ -319,14 +318,14 @@ ORDER BY start_time;
 
 ## Cold vs Warm Runs
 
-The benchmark implements the following pattern:
+By default, the benchmark runs each query once (NUM_RUNS = 1). To test cold vs warm performance, use `--runs 4`:
 
 1. **Cold Run (run 1)**: First execution after warehouse creation
    - Warehouse starts from suspended state
    - No cache available
    - Classified as "cold" run type
 
-2. **Warm Runs (runs 2-4)**: Subsequent executions
+2. **Warm Runs (runs 2-4)**: Subsequent executions (when using --runs 4)
    - Warehouse already running
    - May benefit from cache (result cache is disabled, but metadata cache is active)
    - Classified as "warm" or "semi-warm" depending on query repetition
@@ -456,8 +455,7 @@ After completing the Snowflake benchmark:
 
 - Result caching is disabled (`USE_CACHED_RESULT = FALSE`) to ensure fair benchmarking
 - TPC-H datasets are available at multiple scale factors:
-  - SF100: ~100GB data (default)
-  - SF1000: ~1TB data
+  - SF1000: ~1TB data (default)
   - SF10000: ~10TB data
 - All queries use fully qualified table names: `SNOWFLAKE_SAMPLE_DATA.TPCH_SF{scale_factor}.*`
 - Queries are adapted from the official TPC-H specification with standard substitution values

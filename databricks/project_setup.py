@@ -2,7 +2,7 @@
 """
 Databricks vs Snowflake Benchmarking Project Setup
 
-This script sets up the catalog, schema, and SQL warehouses for TPC-H SF100
+This script sets up the catalog, schema, and SQL warehouses for TPC-H SF1000
 benchmarking according to the project plan requirements.
 
 Requirements:
@@ -15,6 +15,9 @@ Based on Snowflake's project_setup.sql approach
 """
 
 import logging
+import sys
+from pathlib import Path
+
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.sql import (
     CreateWarehouseRequestWarehouseType,
@@ -22,11 +25,11 @@ from databricks.sdk.service.sql import (
     EndpointConfPair,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Configuration matching project plan
 # Use existing catalog (creating new catalog requires storage configuration)
@@ -75,10 +78,10 @@ def setup_catalog_and_schema(w: WorkspaceClient):
         logger.info(f"\nVerifying catalog: {CATALOG_NAME}")
         try:
             catalog = w.catalogs.get(CATALOG_NAME)
-            logger.info(f"✓ Catalog exists: {CATALOG_NAME}")
+            logger.info(f"✅ Catalog exists: {CATALOG_NAME}")
             logger.info(f"  Owner: {catalog.owner}")
         except Exception as e:
-            logger.error(f"✗ Catalog {CATALOG_NAME} not found: {e}")
+            logger.error(f"❌ Catalog {CATALOG_NAME} not found: {e}")
             logger.info("  Please create the catalog first or use an existing one")
             return False
 
@@ -90,7 +93,7 @@ def setup_catalog_and_schema(w: WorkspaceClient):
                 catalog_name=CATALOG_NAME,
                 comment="Schema for TPC-H benchmark tables (scale factor agnostic)",
             )
-            logger.info(f"✓ Created schema: {CATALOG_NAME}.{SCHEMA_NAME}")
+            logger.info(f"✅ Created schema: {CATALOG_NAME}.{SCHEMA_NAME}")
         except Exception as e:
             if "SCHEMA_ALREADY_EXISTS" in str(e) or "already exists" in str(e):
                 logger.info(f"  Schema {SCHEMA_NAME} already exists, skipping")
@@ -100,7 +103,7 @@ def setup_catalog_and_schema(w: WorkspaceClient):
         return True
 
     except Exception as e:
-        logger.error(f"✗ Failed to setup schema: {e}")
+        logger.error(f"❌ Failed to setup schema: {e}")
         return False
 
 
@@ -124,7 +127,7 @@ def create_warehouse(w: WorkspaceClient, warehouse_key: str, config: dict):
             tags=EndpointConfPair(key="purpose", value="tpch_benchmark"),
         )
 
-        logger.info(f"✓ Created warehouse: {warehouse_name}")
+        logger.info(f"✅ Created warehouse: {warehouse_name}")
         logger.info(f"  ID: {warehouse.id}")
         if warehouse.warehouse_type:
             logger.info(f"  Type: {warehouse.warehouse_type.value}")
@@ -142,7 +145,7 @@ def create_warehouse(w: WorkspaceClient, warehouse_key: str, config: dict):
                     return wh.id
             return None
         else:
-            logger.error(f"✗ Failed to create warehouse {warehouse_name}: {e}")
+            logger.error(f"❌ Failed to create warehouse {warehouse_name}: {e}")
             return None
 
 
@@ -170,27 +173,27 @@ def verify_setup(w: WorkspaceClient, warehouse_ids: dict):
     logger.info("=" * 70)
 
     # Check catalog
-    logger.info(f"\n✓ Verifying catalog: {CATALOG_NAME}")
+    logger.info(f"\n✅ Verifying catalog: {CATALOG_NAME}")
     try:
         catalog = w.catalogs.get(CATALOG_NAME)
         logger.info(f"  Name: {catalog.name}")
         logger.info(f"  Owner: {catalog.owner}")
     except Exception as e:
-        logger.error(f"✗ Catalog verification failed: {e}")
+        logger.error(f"❌ Catalog verification failed: {e}")
         return False
 
     # Check schema
-    logger.info(f"\n✓ Verifying schema: {CATALOG_NAME}.{SCHEMA_NAME}")
+    logger.info(f"\n✅ Verifying schema: {CATALOG_NAME}.{SCHEMA_NAME}")
     try:
         schema = w.schemas.get(f"{CATALOG_NAME}.{SCHEMA_NAME}")
         logger.info(f"  Full name: {schema.full_name}")
         logger.info(f"  Owner: {schema.owner}")
     except Exception as e:
-        logger.error(f"✗ Schema verification failed: {e}")
+        logger.error(f"❌ Schema verification failed: {e}")
         return False
 
     # Check warehouses
-    logger.info("\n✓ Verifying SQL warehouses:")
+    logger.info("\n✅ Verifying SQL warehouses:")
     all_warehouses = list(w.warehouses.list())
     for key, config in WAREHOUSES.items():
         found = False
@@ -261,9 +264,9 @@ def main():
     try:
         w = WorkspaceClient()
         current_user = w.current_user.me()
-        logger.info(f"✓ Connected as: {current_user.user_name}")
+        logger.info(f"✅ Connected as: {current_user.user_name}")
     except Exception as e:
-        logger.error(f"✗ Failed to connect: {e}")
+        logger.error(f"❌ Failed to connect: {e}")
         logger.info("\nMake sure you have set up authentication:")
         logger.info("  export DATABRICKS_HOST='https://your-workspace.databricks.com'")
         logger.info("  export DATABRICKS_TOKEN='dapi...'")
@@ -271,25 +274,25 @@ def main():
 
     # Step 1: Create catalog and schema
     if not setup_catalog_and_schema(w):
-        logger.error("\n✗ Setup failed at catalog/schema creation")
+        logger.error("\n❌ Setup failed at catalog/schema creation")
         return 1
 
     # Step 2: Create warehouses
     warehouse_ids = setup_warehouses(w)
     if not warehouse_ids:
-        logger.error("\n✗ Setup failed at warehouse creation")
+        logger.error("\n❌ Setup failed at warehouse creation")
         return 1
 
     # Step 3: Verify setup
     if not verify_setup(w, warehouse_ids):
-        logger.error("\n✗ Setup verification failed")
+        logger.error("\n❌ Setup verification failed")
         return 1
 
     # Print summary
     print_summary(warehouse_ids)
 
     logger.info("\n" + "=" * 70)
-    logger.info("✓ Setup complete! Ready for TPC-H SF100 benchmarking.")
+    logger.info("✅ Setup complete! Ready for TPC-H SF1000 benchmarking.")
     logger.info("=" * 70)
 
     return 0

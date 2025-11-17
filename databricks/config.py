@@ -13,25 +13,38 @@ load_dotenv()
 DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
 
-# SQL Warehouse configurations
-# Created by project_setup.py
+# Database and catalog configuration (from .env file - user-specific)
+CATALOG = os.getenv("DATABRICKS_CATALOG")
+SCHEMA = os.getenv("DATABRICKS_SCHEMA")
+
+# SQL Warehouse configurations (from .env file - user-specific)
 # These are SERVERLESS SQL Warehouses (warehouse_type=PRO with enable_serverless_compute=True)
 # This is the correct configuration for fair comparison with Snowflake
 WAREHOUSES = {
-    "xsmall": "520f645d004a6766",  # SMALL equivalent (2X-Small) - SERVERLESS
-    "small": "5737a03930861a01",  # MEDIUM equivalent (Small) - Primary baseline - SERVERLESS
-    "large": "a2a50162b26c3883",  # X-LARGE equivalent (Large) - SERVERLESS
+    "xsmall": os.getenv("DATABRICKS_WAREHOUSE_XSMALL"),
+    "small": os.getenv("DATABRICKS_WAREHOUSE_SMALL"),
+    "large": os.getenv("DATABRICKS_WAREHOUSE_LARGE"),
 }
 
-# Test parameters (matching Snowflake)
-NUM_RUNS = 4  # Number of times to run each query
-NUM_QUERIES = 22  # All TPC-H queries
-SCALE_FACTOR = 1000  # TPC-H scale factor (100 = 100GB, 1000 = 1TB)
+# Ephemeral Warehouse Configuration (for create/destroy pattern like Snowflake)
+WAREHOUSE_PREFIX = "benchmark_dbx"  # Prefix for ephemeral warehouse names
+WAREHOUSE_SIZES = ["xsmall", "small", "large"]  # Available warehouse sizes
 
-# Database and catalog configuration
-# Created by project_setup.py
-CATALOG = "select_pathfinder"
-SCHEMA = "benchmark"  # Schema for TPC-H tables (scale factor agnostic)
+# Map benchmark size keys to Databricks cluster size strings
+WAREHOUSE_SIZE_MAP = {
+    "xsmall": "2X-Small",
+    "small": "Small",
+    "large": "Large",
+}
+
+# Warehouse auto-suspend configuration
+WAREHOUSE_AUTO_STOP_MINS = 10  # Minimum allowed by Databricks (safety net; warehouses are deleted after run)
+WAREHOUSE_MAX_NUM_CLUSTERS = 1  # For serverless warehouses
+
+# Test parameters (matching Snowflake)
+NUM_RUNS = 1  # Number of times to run each query (default: 1 for faster benchmarks)
+NUM_QUERIES = 22  # All TPC-H queries
+SCALE_FACTOR = 1000  # TPC-H scale factor (1000 = 1TB, 10000 = 10TB)
 
 # Run type definitions (for parallel warehouse execution):
 # - "cold": First query on a warehouse (warehouse just started/resumed)

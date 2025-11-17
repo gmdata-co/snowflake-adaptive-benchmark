@@ -51,7 +51,7 @@ def main():
             "\n⚠️  These queries may have bottlenecks that prevent scaling with compute."
         )
     else:
-        logger.info("✓ All queries scale well with larger warehouse sizes.")
+        logger.info("✅ All queries scale well with larger warehouse sizes.")
 
     # Example 2: Identify high-variance queries (inconsistent performance)
     logger.info("\n\n2. QUERIES WITH INCONSISTENT PERFORMANCE (high variance)")

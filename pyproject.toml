@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "colorlog>=6.10.1",
     "cryptography>=46.0.3",
     "databricks-cli>=0.18.0",
     "databricks-sdk>=0.73.0",

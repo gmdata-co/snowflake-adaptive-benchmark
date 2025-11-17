@@ -7,7 +7,10 @@ from databricks import sql
 
 from .base_connection import BaseConnection
 
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class DatabricksConnection(BaseConnection):
@@ -79,13 +82,13 @@ class DatabricksConnection(BaseConnection):
             cursor.execute(f"USE SCHEMA {self.schema}")
             cursor.close()
 
-            logger.info("✓ Connected to Databricks")
-            logger.info(f"✓ Warehouse: {self.warehouse_id}")
-            logger.info(f"✓ Catalog: {self.catalog}")
-            logger.info(f"✓ Schema: {self.schema}")
+            logger.info("✅ Connected to Databricks")
+            logger.info(f"✅ Warehouse: {self.warehouse_id}")
+            logger.info(f"✅ Catalog: {self.catalog}")
+            logger.info(f"✅ Schema: {self.schema}")
 
         except Exception as e:
-            logger.error(f"✗ Failed to connect to Databricks: {e}")
+            logger.error(f"❌ Failed to connect to Databricks: {e}")
             raise ConnectionError(f"Databricks connection failed: {e}") from e
 
     def disconnect(self) -> None:
@@ -93,7 +96,7 @@ class DatabricksConnection(BaseConnection):
         if self.connection:
             self.connection.close()
             self.connection = None
-            logger.info("✓ Disconnected from Databricks")
+            logger.info("✅ Disconnected from Databricks")
 
     def execute_query(self, query: str, **kwargs) -> Any:
         """

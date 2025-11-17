@@ -11,7 +11,10 @@ from cryptography.hazmat.primitives import serialization
 
 from .base_connection import BaseConnection
 
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class SnowflakeConnection(BaseConnection):
@@ -136,16 +139,16 @@ class SnowflakeConnection(BaseConnection):
         cursor.execute("ALTER SESSION SET USE_CACHED_RESULT = FALSE")
         cursor.close()
 
-        logger.info("✓ Connected to Snowflake")
-        logger.info(f"✓ Using role: {self.role}")
-        logger.info(f"✓ Database: {self.database}")
+        logger.info("✅ Connected to Snowflake")
+        logger.info(f"✅ Using role: {self.role}")
+        logger.info(f"✅ Database: {self.database}")
 
     def disconnect(self) -> None:
         """Close Snowflake connection."""
         if self.connection:
             self.connection.close()
             self.connection = None
-            logger.info("✓ Disconnected from Snowflake")
+            logger.info("✅ Disconnected from Snowflake")
 
     def execute_query(
         self, query: str, async_exec: bool = False, **kwargs

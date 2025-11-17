@@ -12,16 +12,17 @@ Provides options to:
 import argparse
 import logging
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# Initialize centralized logging
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from common.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 from config import RESULTS_DIR
 
@@ -52,7 +53,7 @@ def create_backup(results_file: Path) -> Path:
 
     # Copy file
     shutil.copy2(results_file, backup_file)
-    logger.info(f"✓ Created backup: {backup_file}")
+    logger.info(f"✅ Created backup: {backup_file}")
 
     return backup_file
 
@@ -95,7 +96,7 @@ def clear_all(results_file: Path, backup: bool = True):
 
     # Write header only
     df.iloc[0:0].to_csv(results_file, index=False)
-    logger.info(f"✓ Cleared all data from {results_file}")
+    logger.info(f"✅ Cleared all data from {results_file}")
     logger.info(f"  Removed {row_count} rows")
 
 
@@ -147,7 +148,7 @@ def clear_by_run_id(results_file: Path, run_id: str, backup: bool = True):
     # Remove rows
     df_filtered = df[df["run_id"] != run_id]
     df_filtered.to_csv(results_file, index=False)
-    logger.info(f"✓ Removed {row_count} rows from {results_file}")
+    logger.info(f"✅ Removed {row_count} rows from {results_file}")
 
 
 def list_runs(results_file: Path):
