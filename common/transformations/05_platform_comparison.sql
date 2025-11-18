@@ -1,32 +1,44 @@
 -- Platform comparison with dollar costs for both Snowflake and Databricks
 -- Allocates warehouse costs to individual queries based on proportional execution time
-CREATE OR REPLACE VIEW comparison_dollars_both AS
+CREATE OR REPLACE VIEW platform_comparison AS
 
 WITH
--- Get total warehouse cost for Databricks
+-- Get total warehouse cost for Databricks from the cost summary view
 databricks_total_cost AS (
-    SELECT SUM(total_cost) as total_cost
-    FROM main.databricks_warehouse_cost_summary
+    SELECT
+        run_id,
+        SUM(total_dollars) as total_cost
+    FROM main.dbx_latest_cost
+    GROUP BY run_id
 ),
 
 -- Get total execution time for all Databricks queries (to use as denominator)
 databricks_total_time AS (
-    SELECT SUM(execution_time_sec) as total_seconds
-    FROM main.latest_databricks
+    SELECT
+        run_id,
+        SUM(execution_time_sec) as total_seconds
+    FROM main.dbx_latest_run
     WHERE error_message = ''
+    GROUP BY run_id
 ),
 
--- Get total warehouse cost for Snowflake
+-- Get total warehouse cost for Snowflake from the cost summary view
 snowflake_total_cost AS (
-    SELECT SUM(total_cost) as total_cost
-    FROM main.snowflake_warehouse_cost_summary
+    SELECT
+        run_id,
+        SUM(total_dollars) as total_cost
+    FROM main.snowflake_latest_cost
+    GROUP BY run_id
 ),
 
 -- Get total execution time for all Snowflake queries (to use as denominator)
 snowflake_total_time AS (
-    SELECT SUM(execution_time_sec) as total_seconds
-    FROM main.latest_snowflake
+    SELECT
+        run_id,
+        SUM(execution_time_sec) as total_seconds
+    FROM main.snowflake_latest_run
     WHERE error_message = ''
+    GROUP BY run_id
 ),
 
 -- Individual query results with cost allocation
@@ -72,8 +84,8 @@ query_costs AS (
             WHEN s.error_message != '' AND d.error_message != '' THEN 'both_error'
             ELSE 'unknown'
         END AS status
-    FROM main.latest_snowflake s
-    FULL OUTER JOIN main.latest_databricks d
+    FROM main.snowflake_latest_run s
+    FULL OUTER JOIN main.dbx_latest_run d
         ON s.query_num = d.query_num
 )
 
