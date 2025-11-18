@@ -38,7 +38,8 @@ class BenchmarkAnalyzer:
         logger.info(f"Loading data from {self.results_path}")
 
         # Load CSV using pandas first (more forgiving with complex fields)
-        df = pd.read_csv(self.results_path)
+        # Note: df is used by DuckDB in the SQL query below (it can reference Python variables)
+        df = pd.read_csv(self.results_path)  # noqa: F841
 
         # Register the dataframe as a DuckDB table
         self.conn.execute("CREATE TABLE benchmark_results AS SELECT * FROM df")

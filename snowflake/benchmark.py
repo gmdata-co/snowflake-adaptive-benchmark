@@ -6,7 +6,6 @@ Executes TPC-H queries against Snowflake and logs performance metrics.
 """
 
 import json
-import logging
 import time
 from datetime import datetime
 from pathlib import Path
@@ -24,15 +23,11 @@ from common.connections import SnowflakeConnection
 from common.storage import BenchmarkStorage
 # Initialize centralized logging
 from common.logging_config import get_logger
-
-logger = get_logger(__name__)
-
 from config import (
     SNOWFLAKE_CONNECTION,
     SNOWFLAKE_ROLE,
     SNOWFLAKE_DATABASE,
     SNOWFLAKE_SCHEMA,
-    WAREHOUSE_SIZES,
     WAREHOUSE_SIZE_MAP,
     WAREHOUSE_PREFIX,
     WAREHOUSE_AUTO_SUSPEND,
@@ -43,9 +38,10 @@ from config import (
     SCALE_FACTOR,
     APP_NAME,
     QUERIES_DIR,
-    RESULTS_DIR,
     DUCKDB_PATH,
 )
+
+logger = get_logger(__name__)
 
 # Global storage instance for thread-safe DuckDB writes
 storage = BenchmarkStorage(DUCKDB_PATH)
@@ -525,7 +521,7 @@ class SnowflakeBenchmark:
         logger.info(f"Queries: {len(query_nums)} queries")
         logger.info(f"Runs per query: {num_runs}")
         logger.info(f"Warehouse execution: {'Parallel' if parallel else 'Sequential'}")
-        logger.info(f"Query execution: Sequential (one query at a time per warehouse)")
+        logger.info("Query execution: Sequential (one query at a time per warehouse)")
         logger.info(
             f"Total query executions: {len(warehouse_sizes) * len(query_nums) * num_runs}"
         )

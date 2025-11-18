@@ -7,7 +7,6 @@ Queries the Databricks system billing table to get warehouse usage metrics
 """
 
 import sys
-import logging
 from pathlib import Path
 from typing import List, Dict, Any, Set
 from datetime import datetime, timedelta
@@ -18,9 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.logging_config import get_logger
 from common.connections.databricks_connection import DatabricksConnection
-
-logger = get_logger(__name__)
-
 from config import (
     DATABRICKS_HOST,
     DATABRICKS_TOKEN,
@@ -28,6 +24,8 @@ from config import (
     DUCKDB_PATH,
     WAREHOUSES,
 )
+
+logger = get_logger(__name__)
 
 
 class WarehouseUsageLoader:

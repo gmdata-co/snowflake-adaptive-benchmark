@@ -5,7 +5,6 @@ Test Databricks connectivity and setup
 This script helps you verify your Databricks connection and explore your workspace.
 """
 
-import logging
 import sys
 from pathlib import Path
 

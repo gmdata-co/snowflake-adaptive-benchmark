@@ -11,7 +11,6 @@ to ensure system tables have been populated. Unlike Snowflake's documented
 """
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -22,9 +21,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from common.logging_config import get_logger
 from common.storage import BenchmarkStorage
 from common.connections.databricks_connection import DatabricksConnection
-
-logger = get_logger(__name__)
-
 from config import (
     DATABRICKS_HOST,
     DATABRICKS_TOKEN,
@@ -32,6 +28,8 @@ from config import (
     DUCKDB_PATH,
     WAREHOUSES,
 )
+
+logger = get_logger(__name__)
 
 
 class DatabricksResultsEnricher:
@@ -504,7 +502,7 @@ def main():
         description="Enrich all unenriched Databricks benchmark results with system table data"
     )
 
-    args = parser.parse_args()
+    parser.parse_args()
 
     enricher = DatabricksResultsEnricher()
 

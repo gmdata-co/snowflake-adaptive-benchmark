@@ -73,7 +73,7 @@ def main():
             sql_content = sql_file.read_text()
             conn.execute(sql_content)
             conn.commit()  # Explicitly commit changes
-            logger.info(f"  ✓ Complete")
+            logger.info("  ✓ Complete")
         except Exception as e:
             logger.error(f"  ✗ Failed: {e}")
             conn.close()

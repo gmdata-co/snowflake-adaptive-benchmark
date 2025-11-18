@@ -10,7 +10,6 @@ Provides options to:
 """
 
 import argparse
-import logging
 import shutil
 import sys
 from datetime import datetime
@@ -21,10 +20,9 @@ import pandas as pd
 # Initialize centralized logging
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from common.logging_config import get_logger
+from config import RESULTS_DIR
 
 logger = get_logger(__name__)
-
-from config import RESULTS_DIR
 
 RESULTS_FILE = RESULTS_DIR / "benchmark_results.csv"
 BACKUP_DIR = RESULTS_DIR / "backups"

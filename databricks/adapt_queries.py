@@ -10,17 +10,14 @@ This script converts Snowflake TPC-H queries to Databricks syntax by:
 
 import re
 import sys
-import logging
 from pathlib import Path
 
 # Initialize centralized logging
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from common.logging_config import get_logger
+from config import CATALOG, SCHEMA
 
 logger = get_logger(__name__)
-
-# Import config
-from config import CATALOG, SCHEMA
 
 # Source and destination directories
 SNOWFLAKE_QUERIES_DIR = Path("../snowflake/queries/adapted_queries")

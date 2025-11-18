@@ -1,8 +1,6 @@
 """Snowflake connection implementation."""
 
-import logging
 from pathlib import Path
-from typing import Any, Optional
 
 import toml
 import snowflake.connector

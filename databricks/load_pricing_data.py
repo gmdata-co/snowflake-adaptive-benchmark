@@ -7,10 +7,8 @@ pricing and stores it in DuckDB for cost calculations.
 """
 
 import sys
-import logging
 from pathlib import Path
 from typing import List, Dict, Any
-from decimal import Decimal
 import duckdb
 
 # Add parent directory to path for common imports
@@ -18,9 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.logging_config import get_logger
 from common.connections.databricks_connection import DatabricksConnection
-
-logger = get_logger(__name__)
-
 from config import (
     DATABRICKS_HOST,
     DATABRICKS_TOKEN,
@@ -28,6 +23,8 @@ from config import (
     DUCKDB_PATH,
     WAREHOUSES,
 )
+
+logger = get_logger(__name__)
 
 
 class PricingDataLoader:

@@ -9,7 +9,6 @@ This script validates that TPC-H data has been correctly loaded into Databricks 
 4. Checking for clustering/partitioning (should be none for fair comparison)
 """
 
-import logging
 import sys
 from pathlib import Path
 
@@ -18,10 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Initialize centralized logging
 from common.logging_config import get_logger
-
-logger = get_logger(__name__)
-
-# Import config
 from config import (
     CATALOG,
     SCHEMA,
@@ -31,6 +26,8 @@ from config import (
     DATABRICKS_TOKEN,
 )
 from common.connections import DatabricksConnection
+
+logger = get_logger(__name__)
 
 # Expected row counts for TPC-H SF1000
 EXPECTED_ROW_COUNTS = {

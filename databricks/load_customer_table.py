@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Simple script to load customer table from S3 into Databricks."""
 
-import logging
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from databricks import sql
 from common.connections import DatabricksConnection
 from config import DATABRICKS_HOST, DATABRICKS_TOKEN, CATALOG, SCHEMA, WAREHOUSES
 

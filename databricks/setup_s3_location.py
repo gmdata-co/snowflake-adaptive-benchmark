@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Create external location for S3 bucket in Databricks."""
 
-import logging
 import sys
 from pathlib import Path
 
@@ -25,7 +24,7 @@ def main():
 
     try:
         # Connect to Databricks
-        logger.info(f"\nConnecting to Databricks workspace...")
+        logger.info("\nConnecting to Databricks workspace...")
         w = WorkspaceClient()
         user = w.current_user.me()
         logger.info(f"✅ Connected as: {user.user_name}")
@@ -34,14 +33,14 @@ def main():
         logger.info(f"\nChecking for existing external location: {LOCATION_NAME}")
         try:
             existing = w.external_locations.get(LOCATION_NAME)
-            logger.info(f"✅ External location already exists")
+            logger.info("✅ External location already exists")
             logger.info(f"  URL: {existing.url}")
             return True
         except Exception:
             logger.info("  Not found, creating new...")
 
         # Create external location
-        logger.info(f"\nCreating external location...")
+        logger.info("\nCreating external location...")
         from databricks.sdk.service.catalog import ExternalLocationInfo
 
         location = ExternalLocationInfo(

@@ -14,7 +14,7 @@ from typing import Optional, List
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from common.logging_config import get_logger
+from common.logging_config import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -125,7 +125,7 @@ Examples:
                 # Comma-separated: "1,2,3"
                 query_nums = [int(q.strip()) for q in args.queries.split(",")]
             logger.info(f"Running queries: {query_nums}")
-        except Exception as e:
+        except Exception:
             logger.error(f"Invalid query format: {args.queries}")
             sys.exit(1)
 

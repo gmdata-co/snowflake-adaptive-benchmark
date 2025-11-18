@@ -1,6 +1,5 @@
 """Databricks connection implementation."""
 
-import logging
 from typing import Any
 
 from databricks import sql

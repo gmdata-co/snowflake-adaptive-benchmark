@@ -10,11 +10,10 @@ to ensure ACCOUNT_USAGE has been populated.
 """
 
 import argparse
-import logging
 import toml
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 import snowflake.connector
 from snowflake.connector import DictCursor
@@ -25,9 +24,6 @@ from cryptography.hazmat.primitives import serialization
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from common.logging_config import get_logger
 from common.storage import BenchmarkStorage
-
-logger = get_logger(__name__)
-
 from config import (
     SNOWFLAKE_CONNECTION,
     SNOWFLAKE_ROLE,
@@ -35,6 +31,8 @@ from config import (
     SNOWFLAKE_SCHEMA,
     DUCKDB_PATH,
 )
+
+logger = get_logger(__name__)
 
 
 class ResultsEnricher:

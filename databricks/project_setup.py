@@ -14,7 +14,6 @@ Requirements:
 Based on Snowflake's project_setup.sql approach
 """
 
-import logging
 import sys
 from pathlib import Path
 

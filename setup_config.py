@@ -8,7 +8,6 @@ This script will:
 3. Generate a configured .env file
 """
 
-import os
 import sys
 import subprocess
 from pathlib import Path
@@ -139,14 +138,14 @@ def get_snowflake_config():
             else:
                 print(f"❌ Please enter a number between 1 and {len(connections)}")
         except ValueError:
-            print(f"❌ Please enter a valid number")
+            print("❌ Please enter a valid number")
 
     # Test the selected connection
     print(f"\n🔍 Testing connection '{connection}'...")
     if test_snowflake_connection(connection):
-        print(f"✅ Successfully connected to Snowflake!\n")
+        print("✅ Successfully connected to Snowflake!\n")
     else:
-        print(f"⚠️  Connection test failed. Proceeding anyway (may fail at runtime).\n")
+        print("⚠️  Connection test failed. Proceeding anyway (may fail at runtime).\n")
 
     role = input("Enter Snowflake role (default: BENCHMARK): ").strip() or "BENCHMARK"
     database = (
@@ -316,7 +315,7 @@ export DATABRICKS_WAREHOUSE_LARGE={databricks_config['warehouses']['large']}
 
     env_path = Path(".env")
     env_path.write_text(env_content)
-    print(f"\n✅ Configuration saved to .env")
+    print("\n✅ Configuration saved to .env")
 
     # Show summary
     print_header("CONFIGURATION SUMMARY")

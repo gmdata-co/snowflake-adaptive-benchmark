@@ -6,7 +6,6 @@ Adapt TPC-H queries for Snowflake.
 - Update table references to use SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000
 """
 
-import logging
 import re
 import sys
 from pathlib import Path

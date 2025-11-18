@@ -5,7 +5,6 @@ This module provides thread-safe DuckDB storage for benchmark results from both
 Snowflake and Databricks benchmarks.
 """
 
-import logging
 import threading
 from pathlib import Path
 from typing import Dict, Any, Optional

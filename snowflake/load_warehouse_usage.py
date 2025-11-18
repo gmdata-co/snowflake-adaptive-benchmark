@@ -6,10 +6,9 @@ and loads it into DuckDB for cost analysis.
 """
 
 import sys
-import logging
 from pathlib import Path
 from typing import Set, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 import duckdb
 
 # Add parent directory to path for common imports
@@ -17,9 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.logging_config import get_logger
 from common.connections.snowflake_connection import SnowflakeConnection
-
-logger = get_logger(__name__)
-
 from config import (
     SNOWFLAKE_CONNECTION,
     SNOWFLAKE_ROLE,
@@ -27,6 +23,8 @@ from config import (
     SNOWFLAKE_SCHEMA,
     DUCKDB_PATH,
 )
+
+logger = get_logger(__name__)
 
 
 class WarehouseUsageLoader:
@@ -134,7 +132,7 @@ class WarehouseUsageLoader:
             logger.warning("No warehouse names provided")
             return []
 
-        logger.info(f"\nFetching warehouse usage from Snowflake...")
+        logger.info("\nFetching warehouse usage from Snowflake...")
         logger.info(f"  Warehouses: {len(warehouse_names)}")
         logger.info(f"  Start time: {start_time}")
 
@@ -157,7 +155,7 @@ class WarehouseUsageLoader:
         ORDER BY WAREHOUSE_NAME, START_TIME
         """
 
-        logger.info(f"Executing query on SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY...")
+        logger.info("Executing query on SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY...")
         cursor = self.sf_conn.execute_query(query)
         rows = cursor.fetchall()
 
@@ -181,7 +179,7 @@ class WarehouseUsageLoader:
 
         # Log summary
         unique_warehouses = set(r['warehouse_name'] for r in usage_data)
-        logger.info(f"\nUsage Summary:")
+        logger.info("\nUsage Summary:")
         logger.info(f"  Total records: {len(usage_data)}")
         logger.info(f"  Unique warehouses: {len(unique_warehouses)}")
         logger.info(f"  Total credits: {total_credits:.2f}")
@@ -296,7 +294,7 @@ class WarehouseUsageLoader:
         grand_total_cost = grand_total_credits * 3
 
         logger.info("\n" + "-" * 80)
-        logger.info(f"GRAND TOTAL:")
+        logger.info("GRAND TOTAL:")
         logger.info(f"  Total warehouses: {len(warehouse_totals)}")
         logger.info(f"  Total records: {len(usage_data)}")
         logger.info(f"  Total credits: {grand_total_credits:.4f}")
