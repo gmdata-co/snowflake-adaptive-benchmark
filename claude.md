@@ -12,3 +12,6 @@
 - dbx is short for databricks.
 - run `source ~/.zshrc` to get the databricks credentials loaded.
 - any time you need to connect to snowflake or dbx with python, use the global connections modules in the common folder: connections/databricks_connection.py and connections/snowflake_connection.py
+- whenever I mention duckDB, I mean the file called `benchmark_results.duckdb` in the project root.
+- in duckdb, the schema we use is always benchmark_results.main
+- if duckdb is locked when you try to use it, just stop and ask me to close it. Don't start doing crazy work arounds.

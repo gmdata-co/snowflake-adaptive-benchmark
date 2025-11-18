@@ -17,12 +17,11 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from databricks import sql
-
 # Initialize centralized logging
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from common.logging_config import get_logger
 from common.storage import BenchmarkStorage
+from common.connections.databricks_connection import DatabricksConnection
 
 logger = get_logger(__name__)
 
@@ -31,6 +30,7 @@ from config import (
     DATABRICKS_TOKEN,
     CATALOG,
     DUCKDB_PATH,
+    WAREHOUSES,
 )
 
 
@@ -40,30 +40,43 @@ class DatabricksResultsEnricher:
     def __init__(self):
         """Initialize enricher."""
         self.storage = BenchmarkStorage(DUCKDB_PATH)
-        self.conn: Optional[sql.client.Connection] = None
+        self.db_conn: Optional[DatabricksConnection] = None
 
     def connect(self):
         """Establish connection to Databricks for querying system tables."""
-        logger.info(f"Connecting to Databricks to query system tables...")
+        logger.info("Connecting to Databricks to query system tables...")
+
+        # Use XSMALL warehouse to query system tables (system tables are accessible from any warehouse)
+        warehouse_id = WAREHOUSES.get("xsmall")
+        if not warehouse_id:
+            raise ValueError("XSMALL warehouse not configured in .env file")
+
+        logger.info(f"  Using warehouse: {warehouse_id}")
+        logger.info(f"  Host: {DATABRICKS_HOST}")
 
         try:
-            # Clean hostname (remove https:// prefix if present)
-            hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
-
-            # For system tables, we can connect without specifying a warehouse
-            # We'll use SQL Execution API directly
-            self.conn = sql.connect(
-                server_hostname=hostname,
-                http_path="/sql/1.0/warehouses/system",  # Use system warehouse for system tables
-                access_token=DATABRICKS_TOKEN,
+            # Use the common DatabricksConnection class
+            # Note: We use CATALOG from config initially, then switch to 'system' catalog
+            logger.info("  Establishing connection to warehouse...")
+            self.db_conn = DatabricksConnection(
+                host=DATABRICKS_HOST,
+                token=DATABRICKS_TOKEN,
+                warehouse_id=warehouse_id,
+                catalog=CATALOG,  # Initial catalog (will switch to system below)
+                schema="information_schema",  # Dummy schema (not used for system tables)
             )
 
-            # Set catalog to system for querying system tables
-            cursor = self.conn.cursor()
+            self.db_conn.connect()
+            logger.info("  ✅ Warehouse connection established")
+
+            # Switch to system catalog for querying system tables
+            logger.info("  Switching to system catalog...")
+            cursor = self.db_conn.get_cursor()
             cursor.execute("USE CATALOG system")
             cursor.close()
+            logger.info("  ✅ Switched to system catalog")
 
-            logger.info("✅ Connected to Databricks (system catalog)")
+            logger.info("✅ Connected to Databricks - ready to query system tables")
 
         except Exception as e:
             logger.error(f"❌ Failed to connect to Databricks: {e}")
@@ -72,8 +85,8 @@ class DatabricksResultsEnricher:
 
     def disconnect(self):
         """Close connection."""
-        if self.conn:
-            self.conn.close()
+        if self.db_conn:
+            self.db_conn.disconnect()
             logger.info("✅ Disconnected from Databricks")
 
     def get_run_metadata(self) -> Dict[str, Any]:
@@ -152,6 +165,9 @@ class DatabricksResultsEnricher:
         start_buffer = start_time - timedelta(minutes=5)
         end_buffer = end_time + timedelta(minutes=5)
 
+        logger.info(f"  Time range: {start_buffer.isoformat()} to {end_buffer.isoformat()}")
+        logger.info(f"  Sample statement IDs: {statement_ids[:3]}")
+
         # Build query - system.query.history schema
         # Reference: https://docs.databricks.com/en/admin/system-tables/query-history.html
         statement_id_list = "', '".join(statement_ids)
@@ -160,16 +176,16 @@ class DatabricksResultsEnricher:
             sql_query = f"""
             SELECT
                 statement_id,
-                executed_as_user_name,
+                executed_as_user_id,
                 start_time,
                 end_time,
                 total_task_duration_ms,
-                compilation_time_ms,
-                execution_time_ms,
+                compilation_duration_ms,
+                execution_duration_ms,
                 read_bytes,
                 read_rows,
                 written_bytes,
-                produced_rows,
+                rows_produced,
                 error_message
             FROM system.query.history
             WHERE statement_id IN ('{statement_id_list}')
@@ -178,10 +194,28 @@ class DatabricksResultsEnricher:
             ORDER BY start_time
             """
 
-            cursor = self.conn.cursor()
+            # First, do a sanity check - can we query system.query.history at all?
+            logger.info("  Running sanity check: querying recent queries from system.query.history...")
+            # Skip sanity check for now - the Databricks connector has a bug with NULL values
+            # We'll just try the main query and see if it works
+            logger.info("  (Skipping COUNT check due to Databricks connector bug with NULL values)")
+
+            logger.info("  Executing main query against system.query.history...")
+            logger.info(f"  Full query (first 500 chars):\n{sql_query[:500]}")
+
+            cursor = self.db_conn.get_cursor()
             cursor.execute(sql_query)
-            results = cursor.fetchall()
+
+            logger.info("  Fetching results (using Arrow to avoid pandas NULL bug)...")
+            # Use fetchall_arrow() to get Arrow table, then convert to Python dicts
+            # This avoids the pandas NULL conversion bug
+            arrow_table = cursor.fetchall_arrow()
+            results = arrow_table.to_pylist() if arrow_table else []
             cursor.close()
+
+            # Convert list of dicts back to list of tuples to match expected format
+            if results:
+                results = [tuple(row.values()) for row in results]
 
             logger.info(f"✅ Retrieved {len(results)} records from system.query.history")
 
@@ -201,19 +235,21 @@ class DatabricksResultsEnricher:
                     'start_time': row[2],
                     'end_time': row[3],
                     'total_task_duration_ms': row[4],
-                    'compilation_time_ms': row[5],
-                    'execution_time_ms': row[6],
+                    'compilation_duration_ms': row[5],  # Databricks uses 'duration' not 'time'
+                    'execution_duration_ms': row[6],    # Databricks uses 'duration' not 'time'
                     'read_bytes': row[7],
                     'read_rows': row[8],
                     'written_bytes': row[9],
-                    'produced_rows': row[10],
+                    'rows_produced': row[10],
                     'error_message': row[11],
                 }
 
             return history_dict
 
         except Exception as e:
+            import traceback
             logger.error(f"❌ Failed to query system.query.history: {e}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
             logger.warning("Ensure you have SELECT permissions on system.query.history")
             return {}
 
@@ -239,6 +275,9 @@ class DatabricksResultsEnricher:
         start_buffer = start_time - timedelta(hours=1)
         end_buffer = end_time + timedelta(hours=1)
 
+        logger.info(f"  Date range: {start_buffer.date()} to {end_buffer.date()}")
+        logger.info(f"  Warehouses: {warehouse_ids}")
+
         # Build query - system.billing.usage schema
         # Reference: https://docs.databricks.com/en/admin/system-tables/billing.html
         warehouse_id_list = "', '".join(warehouse_ids)
@@ -260,8 +299,13 @@ class DatabricksResultsEnricher:
             ORDER BY usage_start_time
             """
 
-            cursor = self.conn.cursor()
+            logger.info("  Executing query against system.billing.usage...")
+            logger.debug(f"  Query: {sql_query[:200]}...")
+
+            cursor = self.db_conn.get_cursor()
             cursor.execute(sql_query)
+
+            logger.info("  Fetching billing results...")
             results = cursor.fetchall()
             cursor.close()
 
@@ -323,9 +367,9 @@ class DatabricksResultsEnricher:
                 query_costs[statement_id] = None
                 continue
 
-            execution_ms = query_history[statement_id].get('execution_time_ms', 0)
+            execution_ms = query_history[statement_id].get('execution_duration_ms', 0)
             if not execution_ms:
-                logger.warning(f"  Query {statement_id} has no execution time, skipping cost calculation")
+                logger.warning(f"  Query {statement_id} has no execution duration, skipping cost calculation")
                 query_costs[statement_id] = None
                 continue
 
@@ -413,13 +457,13 @@ class DatabricksResultsEnricher:
             try:
                 self.storage.update_databricks_enrichment_data(
                     query_id=statement_id,
-                    compilation_time_ms=history.get('compilation_time_ms'),
+                    compilation_time_ms=history.get('compilation_duration_ms'),  # Databricks uses 'duration'
                     queued_time_ms=None,  # Not directly available in query history
                     bytes_scanned=history.get('read_bytes'),
                     credits_used_compute=cost,  # Approximate DBU cost
                     credits_used_cloud_services=None,  # Not applicable for Databricks
-                    total_elapsed_time_ms=history.get('execution_time_ms'),
-                    rows_produced=history.get('produced_rows'),  # Fetch row count from system table
+                    total_elapsed_time_ms=history.get('execution_duration_ms'),  # Databricks uses 'duration'
+                    rows_produced=history.get('rows_produced'),  # Fetch row count from system table
                 )
                 enriched_count += 1
 
