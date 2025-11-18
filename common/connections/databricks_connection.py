@@ -79,6 +79,10 @@ class DatabricksConnection(BaseConnection):
             cursor = self.connection.cursor()
             cursor.execute(f"USE CATALOG {self.catalog}")
             cursor.execute(f"USE SCHEMA {self.schema}")
+
+            # Disable result caching to ensure accurate benchmarking
+            cursor.execute("SET use_cached_result = false")
+
             cursor.close()
 
             logger.info("✅ Connected to Databricks")
