@@ -198,13 +198,13 @@ class ResultsEnricher:
         # Convert to dictionary keyed by query_id
         history_dict = {}
         for row in results:
-            # DictCursor returns case-insensitive dict-like objects
-            history_dict[row['query_id']] = {
-                'compilation_time_ms': row['compilation_time_ms'],
-                'queued_time_ms': row['queued_time_ms'],
-                'bytes_scanned': row['bytes_scanned'],
-                'credits_used_cloud_services': row['credits_used_cloud_services'],
-                'total_elapsed_time_ms': row['total_elapsed_time_ms'],
+            # DictCursor returns uppercase column names
+            history_dict[row['QUERY_ID']] = {
+                'compilation_time_ms': row['COMPILATION_TIME_MS'],
+                'queued_time_ms': row['QUEUED_TIME_MS'],
+                'bytes_scanned': row['BYTES_SCANNED'],
+                'credits_used_cloud_services': row['CREDITS_USED_CLOUD_SERVICES'],
+                'total_elapsed_time_ms': row['TOTAL_ELAPSED_TIME_MS'],
             }
 
         return history_dict
