@@ -196,38 +196,7 @@ def get_databricks_config():
         user = client.current_user.me()
         print(f"✅ Connected as: {user.user_name}\n")
 
-        # Get warehouses
-        print("📋 Available SQL Warehouses:")
-        warehouses = list(client.warehouses.list())
-        if not warehouses:
-            print("⚠️  No SQL warehouses found. You need to create at least 3.")
-            print(
-                "   Go to: Databricks UI → SQL Warehouses → Create SQL Warehouse"
-            )
-            return None
-
-        warehouse_map = {}
-        for i, wh in enumerate(warehouses, 1):
-            print(f"  {i}. {wh.name} (ID: {wh.id}) - {wh.cluster_size}")
-            warehouse_map[str(i)] = {"id": wh.id, "name": wh.name}
-
-        # Select warehouses for each size
-        print("\n🎯 Select warehouses for benchmark (choose 3 different ones):")
-        selected = {}
-        for size in ["xsmall", "small", "large"]:
-            while True:
-                choice = (
-                    input(f"  Which warehouse for {size.upper()}? (number): ")
-                    .strip()
-                    .lower()
-                )
-                if choice in warehouse_map:
-                    selected[size] = warehouse_map[choice]["id"]
-                    print(f"  ✅ Selected: {warehouse_map[choice]['name']}")
-                    break
-                print(f"  ❌ Invalid choice. Pick a number from 1-{len(warehouses)}")
-
-        # Get catalogs and schemas
+        # Get catalogs and schemas (warehouses are now created dynamically)
         print("\n📚 Discovering catalogs...")
         catalogs = list(client.catalogs.list())
         if not catalogs:
@@ -276,7 +245,6 @@ def get_databricks_config():
             "token": token,
             "catalog": catalog,
             "schema": schema,
-            "warehouses": selected,
         }
 
     except ImportError:
@@ -308,9 +276,8 @@ export DATABRICKS_HOST={databricks_config['host']}
 export DATABRICKS_TOKEN={databricks_config['token']}
 export DATABRICKS_CATALOG={databricks_config['catalog']}
 export DATABRICKS_SCHEMA={databricks_config['schema']}
-export DATABRICKS_WAREHOUSE_XSMALL={databricks_config['warehouses']['xsmall']}
-export DATABRICKS_WAREHOUSE_SMALL={databricks_config['warehouses']['small']}
-export DATABRICKS_WAREHOUSE_LARGE={databricks_config['warehouses']['large']}
+
+# Note: SQL Warehouses are created and destroyed automatically during benchmark runs
 """
 
     env_path = Path(".env")
@@ -329,11 +296,9 @@ export DATABRICKS_WAREHOUSE_LARGE={databricks_config['warehouses']['large']}
     print(f"  Host: {databricks_config['host']}")
     print(f"  Catalog: {databricks_config['catalog']}")
     print(f"  Schema: {databricks_config['schema']}")
-    print(f"  Warehouse X-Small: {databricks_config['warehouses']['xsmall']}")
-    print(f"  Warehouse Small: {databricks_config['warehouses']['small']}")
-    print(f"  Warehouse Large: {databricks_config['warehouses']['large']}")
+    print("  Warehouses: Created dynamically during benchmark runs")
     print()
-    print("You're all set! Run: uv run python main.py")
+    print("You're all set! Run: uv run main.py")
 
 
 def main():

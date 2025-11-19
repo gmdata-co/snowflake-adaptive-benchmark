@@ -17,3 +17,22 @@
 - in duckdb, the schema we use is always benchmark_results.main
 - if duckdb is locked when you try to use it, just stop and ask me to close it. Don't start doing crazy work arounds.
 - after you write a bunch of python code, run `uvx ruff check --fix` to make sure unused imports and other linting issues are cleaned up. Please inspect the output of this command to see if there were any unfixable violations, and help fix them.
+
+## Implementation Details
+
+### Architecture Patterns
+- **Separation of Concerns**: Benchmark modules are split into:
+  - `warehouse_manager.py` - Warehouse lifecycle (create, destroy, suspend/resume)
+  - `query_executor.py` - Query execution and metrics collection
+  - `benchmark.py` - Orchestration using the managers
+- **Scenario Support**: Warehouse names include scenario (`BENCHMARK_WH_XLARGE_NORMAL_001`) to prevent conflicts when running multiple scenarios with same run_id
+- **Run Type Classification**: Queries are classified as `cold` (first), `semi-warm` (new query on warm warehouse), or `warm` (repeated query)
+
+### Testing
+- **Always run tests** after refactoring: `./run_tests.sh` or `uv run pytest tests/ -v`
+- **Keep tests updated** when changing core logic (warehouse naming, scenario handling, run types)
+- **Test coverage**: 34 tests covering warehouse managers, query executors, and scenario integration
+- Tests use mocks - no database connections required
+
+### Analysis (dbt)
+- Run `uv run dbt build --profiles-dir .` in transformations directory to rebuild all views if needed. Views don't really need to be updated unless something in the sql chagned.

@@ -2,9 +2,16 @@
 Dump TPCH tables from Snowflake to S3 stage.
 """
 import os
-from dotenv import load_dotenv
-from common.connections.snowflake_connection import SnowflakeConnection
-from common.logging_config import get_logger
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import from common
+parent_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(parent_dir))
+
+from dotenv import load_dotenv  # noqa: E402
+from common.connections.snowflake_connection import SnowflakeConnection  # noqa: E402
+from common.logging_config import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 

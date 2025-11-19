@@ -21,7 +21,7 @@ uv add duckdb
 Shows summary statistics, warehouse comparison, run type comparison, and top 5 fastest/slowest queries:
 
 ```bash
-uv run python analyze_results.py
+uv run analyze_results.py
 ```
 
 ### Full Analysis
@@ -29,7 +29,7 @@ uv run python analyze_results.py
 Run all available analyses:
 
 ```bash
-uv run python analyze_results.py --all
+uv run analyze_results.py --all
 ```
 
 This includes:
@@ -45,7 +45,7 @@ This includes:
 Analyze a specific query number (e.g., query 9):
 
 ```bash
-uv run python analyze_results.py --query 9
+uv run analyze_results.py --query 9
 ```
 
 ### Export Summary to CSV
@@ -53,7 +53,7 @@ uv run python analyze_results.py --query 9
 Export aggregated summary statistics to a CSV file:
 
 ```bash
-uv run python analyze_results.py --export output_summary.csv
+uv run analyze_results.py --export output_summary.csv
 ```
 
 The exported CSV includes:
@@ -69,7 +69,7 @@ The exported CSV includes:
 Execute custom SQL queries against the benchmark data:
 
 ```bash
-uv run python analyze_results.py --sql "SELECT warehouse_size, AVG(execution_time_sec) FROM benchmark_results GROUP BY warehouse_size"
+uv run analyze_results.py --sql "SELECT warehouse_size, AVG(execution_time_sec) FROM benchmark_results GROUP BY warehouse_size"
 ```
 
 ### Specify Results File
@@ -77,7 +77,7 @@ uv run python analyze_results.py --sql "SELECT warehouse_size, AVG(execution_tim
 By default, the script looks for results at `../results/benchmark_results.csv` (relative to this analysis directory). To use a different file:
 
 ```bash
-uv run python analyze_results.py --results path/to/results.csv
+uv run analyze_results.py --results path/to/results.csv
 ```
 
 ## Available Analyses
@@ -169,36 +169,36 @@ The analysis expects a CSV with the following columns:
 
 1. **Identify slow queries**:
    ```bash
-   uv run python analyze_results.py --sql "SELECT query_num, AVG(execution_time_sec) as avg_time FROM benchmark_results GROUP BY query_num HAVING avg_time > 10 ORDER BY avg_time DESC"
+   uv run analyze_results.py --sql "SELECT query_num, AVG(execution_time_sec) as avg_time FROM benchmark_results GROUP BY query_num HAVING avg_time > 10 ORDER BY avg_time DESC"
    ```
 
 2. **Check variance across runs**:
    ```bash
-   uv run python analyze_results.py --sql "SELECT query_num, STDDEV(execution_time_sec) as stddev FROM benchmark_results WHERE run_type='warm' GROUP BY query_num ORDER BY stddev DESC LIMIT 10"
+   uv run analyze_results.py --sql "SELECT query_num, STDDEV(execution_time_sec) as stddev FROM benchmark_results WHERE run_type='warm' GROUP BY query_num ORDER BY stddev DESC LIMIT 10"
    ```
 
 3. **Compare warehouse efficiency**:
    ```bash
-   uv run python analyze_results.py --sql "SELECT warehouse_size, query_num, AVG(execution_time_sec) FROM benchmark_results WHERE run_type='warm' GROUP BY warehouse_size, query_num ORDER BY query_num, warehouse_size"
+   uv run analyze_results.py --sql "SELECT warehouse_size, query_num, AVG(execution_time_sec) FROM benchmark_results WHERE run_type='warm' GROUP BY warehouse_size, query_num ORDER BY query_num, warehouse_size"
    ```
 
 ### Performance Analysis Workflow
 
 1. Run the full analysis to get an overview:
    ```bash
-   uv run python analyze_results.py --all
+   uv run analyze_results.py --all
    ```
 
 2. Identify interesting queries (very fast, very slow, or high variance)
 
 3. Deep dive into specific queries:
    ```bash
-   uv run python analyze_results.py --query <query_num>
+   uv run analyze_results.py --query <query_num>
    ```
 
 4. Export summary for further analysis in spreadsheets:
    ```bash
-   uv run python analyze_results.py --export summary.csv
+   uv run analyze_results.py --export summary.csv
    ```
 
 ## Extending the Analysis

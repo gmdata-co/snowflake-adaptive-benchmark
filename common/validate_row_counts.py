@@ -25,7 +25,6 @@ from databricks.config import (
     DATABRICKS_TOKEN,
     CATALOG as DATABRICKS_CATALOG,
     SCHEMA as DATABRICKS_SCHEMA,
-    WAREHOUSES,
 )
 
 logger = get_logger(__name__)
@@ -160,15 +159,19 @@ def get_databricks_counts() -> dict[str, int | None]:
     """
     counts = {}
     connection = None
+    warehouse_manager = None
+    warehouse_id = None
 
     try:
         logger.info("=" * 70)
         logger.info("Connecting to Databricks...")
 
-        # Use the smallest warehouse (2X-Small)
-        warehouse_id = WAREHOUSES.get("xsmall")
-        if not warehouse_id:
-            raise ValueError("DATABRICKS_WAREHOUSE_XSMALL not configured in .env")
+        # Create a temporary warehouse for validation
+        from databricks.warehouse_manager import WarehouseManager
+
+        warehouse_manager = WarehouseManager(run_id="validation")
+        warehouse_id = warehouse_manager.create_warehouse("xsmall", "validation")
+        logger.info(f"Created temporary warehouse for validation: {warehouse_id}")
 
         connection = DatabricksConnection(
             host=DATABRICKS_HOST,
@@ -199,6 +202,12 @@ def get_databricks_counts() -> dict[str, int | None]:
         if connection and connection.is_connected():
             connection.disconnect()
             logger.info("Disconnected from Databricks")
+
+        # Clean up temporary warehouse
+        if warehouse_manager and warehouse_id:
+            warehouse_name = warehouse_manager.get_warehouse_name("xsmall", "validation")
+            warehouse_manager.destroy_warehouse(warehouse_id, warehouse_name)
+            logger.info("Cleaned up temporary validation warehouse")
 
     return counts
 

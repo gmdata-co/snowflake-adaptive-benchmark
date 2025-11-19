@@ -4,19 +4,19 @@
 
 ```bash
 # Default summary (fastest way to get insights)
-uv run python analyze_results.py
+uv run analyze_results.py
 
 # Full comprehensive analysis
-uv run python analyze_results.py --all
+uv run analyze_results.py --all
 
 # Deep dive into a specific query
-uv run python analyze_results.py --query 9
+uv run analyze_results.py --query 9
 
 # Export summary for spreadsheet analysis
-uv run python analyze_results.py --export summary.csv
+uv run analyze_results.py --export summary.csv
 
 # Custom SQL query
-uv run python analyze_results.py --sql "SELECT warehouse_size, AVG(execution_time_sec) FROM benchmark_results WHERE query_num < 10 GROUP BY warehouse_size"
+uv run analyze_results.py --sql "SELECT warehouse_size, AVG(execution_time_sec) FROM benchmark_results WHERE query_num < 10 GROUP BY warehouse_size"
 ```
 
 ## Key Insights from Current Data
@@ -50,22 +50,22 @@ Based on your benchmark results (264 runs across 22 queries):
 
 1. **Investigate slow queries**: Focus on queries 9, 2, 11, 21, 10
    ```bash
-   uv run python analyze_results.py --query 9
+   uv run analyze_results.py --query 9
    ```
 
 2. **Check cold-to-warm speedup**: See how much caching helps
    ```bash
-   uv run python analyze_results.py --all | grep -A 10 "COLD TO WARM"
+   uv run analyze_results.py --all | grep -A 10 "COLD TO WARM"
    ```
 
 3. **Export for deeper analysis**: Use Excel/Google Sheets for charts
    ```bash
-   uv run python analyze_results.py --export analysis.csv
+   uv run analyze_results.py --export analysis.csv
    ```
 
 4. **Compare specific warehouse sizes**: Custom SQL for targeted analysis
    ```bash
-   uv run python analyze_results.py --sql "
+   uv run analyze_results.py --sql "
      SELECT
        query_num,
        AVG(CASE WHEN warehouse_size='MEDIUM' THEN execution_time_sec END) as medium,

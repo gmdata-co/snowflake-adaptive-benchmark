@@ -9,25 +9,25 @@ WITH
 snowflake_coldstart AS (
     SELECT *
     FROM {{ ref('int_snowflake_latest_by_scenario') }}
-    WHERE scenario = 'coldstart'
+    WHERE scenario IN ('coldstart', 'cold_start')  -- Handle both old and new naming
 ),
 
 databricks_coldstart AS (
     SELECT *
     FROM {{ ref('int_databricks_latest_by_scenario') }}
-    WHERE scenario = 'coldstart'
+    WHERE scenario IN ('coldstart', 'cold_start')  -- Handle both old and new naming
 ),
 
 snowflake_cost AS (
     SELECT *
     FROM {{ ref('int_snowflake_costs') }}
-    WHERE scenario = 'coldstart'
+    WHERE scenario IN ('coldstart', 'cold_start')  -- Handle both old and new naming
 ),
 
 databricks_cost AS (
     SELECT *
     FROM {{ ref('int_databricks_costs') }}
-    WHERE scenario = 'coldstart'
+    WHERE scenario IN ('coldstart', 'cold_start')  -- Handle both old and new naming
 ),
 
 -- Get total costs

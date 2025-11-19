@@ -18,11 +18,11 @@ uv run streamlit run dashboard.py
 
 ```bash
 # From this directory (snowflake/analysis/):
-uv run python analyze_results.py
+uv run analyze_results.py
 
 # Or from project root:
 cd snowflake/analysis
-uv run python analyze_results.py
+uv run analyze_results.py
 ```
 
 ## Files
@@ -48,22 +48,22 @@ uv run streamlit run snowflake/analysis/dashboard.py
 
 ```bash
 # Default analysis (summary + key metrics)
-uv run python analyze_results.py
+uv run analyze_results.py
 
 # Full comprehensive analysis
-uv run python analyze_results.py --all
+uv run analyze_results.py --all
 
 # Analyze a specific query
-uv run python analyze_results.py --query 9
+uv run analyze_results.py --query 9
 
 # Export summary to CSV
-uv run python analyze_results.py --export summary.csv
+uv run analyze_results.py --export summary.csv
 
 # Run custom SQL
-uv run python analyze_results.py --sql "SELECT warehouse_size, AVG(execution_time_sec) FROM benchmark_results GROUP BY warehouse_size"
+uv run analyze_results.py --sql "SELECT warehouse_size, AVG(execution_time_sec) FROM benchmark_results GROUP BY warehouse_size"
 
 # Example analysis workflow
-uv run python analyze_example.py
+uv run analyze_example.py
 ```
 
 ## What Gets Analyzed

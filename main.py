@@ -330,8 +330,8 @@ Examples:
         "--scenario",
         type=str,
         choices=["normal", "coldstart", "all"],
-        default="normal",
-        help="Scenario to run: normal (default), coldstart, or all (runs both with same run_id)",
+        default="all",
+        help="Scenario to run: normal, coldstart, or all (default - runs both scenarios with same run_id)",
     )
     parser.add_argument(
         "--snowflake-only",

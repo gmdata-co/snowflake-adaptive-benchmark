@@ -26,39 +26,39 @@ Unlike Snowflake's approach of creating ephemeral warehouses, this benchmark:
 
 ### Basic Usage (Default: Small Warehouse Only)
 ```bash
-uv run python databricks/benchmark.py
+uv run databricks/benchmark.py
 ```
 
 **Note:** By default, only the small warehouse is used. To test multiple sizes, use the `--warehouse` flag.
 
 ### Test with Single Query
 ```bash
-uv run python databricks/benchmark.py --warehouse small --queries 1 --runs 1
+uv run databricks/benchmark.py --warehouse small --queries 1 --runs 1
 ```
 
 ### Sequential Execution
 ```bash
-uv run python databricks/benchmark.py --sequential
+uv run databricks/benchmark.py --sequential
 ```
 
 ### With Cold Starts (Stop/Start Warehouses)
 ```bash
-uv run python databricks/benchmark.py --stop-start
+uv run databricks/benchmark.py --stop-start
 ```
 **Note**: This will stop all warehouses before the benchmark and start them as needed. Adds ~30 sec per warehouse but ensures true cold cache behavior.
 
 ### Multiple Warehouse Sizes
 ```bash
 # Test all three warehouse sizes
-uv run python databricks/benchmark.py --warehouse xsmall --warehouse small --warehouse large
+uv run databricks/benchmark.py --warehouse xsmall --warehouse small --warehouse large
 
 # Test xsmall and small only
-uv run python databricks/benchmark.py --warehouse xsmall --warehouse small
+uv run databricks/benchmark.py --warehouse xsmall --warehouse small
 ```
 
 ### Specific Queries
 ```bash
-uv run python databricks/benchmark.py --queries "1,3,5,7"
+uv run databricks/benchmark.py --queries "1,3,5,7"
 ```
 
 ## Configuration

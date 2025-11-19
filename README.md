@@ -24,10 +24,10 @@ This interactive script will:
 
 - ✓ Prompt for your Snowflake connection name
 - ✓ Prompt for Databricks workspace credentials
-- ✓ Automatically discover your SQL warehouses
-- ✓ Let you select which warehouses to use (X-Small, Small, Large)
 - ✓ Discover available catalogs and schemas
 - ✓ Generate your `.env` file automatically
+
+**Note:** SQL Warehouses are created and destroyed automatically during benchmark runs. No manual warehouse configuration needed.
 
 
 ---
@@ -68,8 +68,6 @@ export SNOWFLAKE_WAREHOUSE_PREFIX=MY_WH
 
 #### Databricks Configuration
 
-Ensure you have [Databricks CLI configured](https://docs.databricks.com/en/dev-tools/cli/install.html).
-
 Configure these variables in `.env`:
 
 - **`DATABRICKS_HOST`** - Your Databricks workspace URL (required)
@@ -77,11 +75,8 @@ Configure these variables in `.env`:
 - **`DATABRICKS_TOKEN`** - Your Databricks personal access token (required)
 - **`DATABRICKS_CATALOG`** - Catalog for benchmark tables (required, user-specific)
 - **`DATABRICKS_SCHEMA`** - Schema for benchmark tables (required, user-specific)
-- **`DATABRICKS_WAREHOUSE_XSMALL`** - SQL Warehouse ID for X-Small size (required)
-- **`DATABRICKS_WAREHOUSE_SMALL`** - SQL Warehouse ID for Small size (required)
-- **`DATABRICKS_WAREHOUSE_LARGE`** - SQL Warehouse ID for Large size (required)
 
-To find warehouse IDs: Go to your Databricks workspace → SQL Warehouses → click each warehouse and copy the ID from the URL or settings.
+**Note:** SQL Warehouses are created and destroyed automatically during benchmark runs. No pre-configuration of warehouses needed.
 
 Example:
 
@@ -90,23 +85,58 @@ export DATABRICKS_HOST=https://dbc-abc123.cloud.databricks.com
 export DATABRICKS_TOKEN=dapi_abc123xyz789
 export DATABRICKS_CATALOG=my_benchmark_catalog
 export DATABRICKS_SCHEMA=my_benchmark_schema
-export DATABRICKS_WAREHOUSE_XSMALL=abc123def456
-export DATABRICKS_WAREHOUSE_SMALL=def456ghi789
-export DATABRICKS_WAREHOUSE_LARGE=ghi789jkl012
 ```
 
 ### 3. Run Benchmarks
 
-```bash
-# Run with default warehouse sizes (medium for Snowflake, small for Databricks)
-uv run python main.py
+#### Basic Usage
 
-# Or run benchmarks individually
-uv run python snowflake/benchmark.py  # Runs medium warehouse only
-uv run python databricks/benchmark.py  # Runs small warehouse only
+```bash
+# Run all scenarios (normal + coldstart) with default settings (medium warehouse)
+uv run main.py
 ```
 
-**Note:** By default, benchmarks run with medium-sized warehouses only. To test multiple warehouse sizes, use the `--warehouse` flag (see platform-specific READMEs).
+#### Command-Line Options
+
+| Flag | Options | Description |
+|------|---------|-------------|
+| `--warehouse-size` | `small`, `medium`, `large` | Warehouse size to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks X-Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake X-Large / Databricks Large |
+| `--scenario` | `normal`, `coldstart`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only<br>• `all`: Run both scenarios with unified run ID (default) |
+| `--queries` | e.g., `1,2,3` or `1-5` | Specific queries to run (default: all 22 TPC-H queries) |
+| `--snowflake-only` | (flag) | Run only Snowflake benchmark (skip Databricks) |
+| `--databricks-only` | (flag) | Run only Databricks benchmark (skip Snowflake) |
+
+#### Examples
+
+```bash
+# Run with large warehouse (runs both scenarios by default)
+uv run main.py --warehouse-size large
+
+# Run specific queries (both scenarios)
+uv run main.py --queries 1,2,3
+uv run main.py --queries 1-5
+
+# Run ONLY normal scenario (warm warehouse)
+uv run main.py --scenario normal
+
+# Run ONLY cold start scenario (warehouse suspended between queries)
+uv run main.py --scenario coldstart
+
+# Explicitly run all scenarios (same as default)
+uv run main.py --scenario all
+
+# Run cold start with specific queries
+uv run main.py --scenario coldstart --queries 1,5,10
+
+# Run only Databricks
+uv run main.py --databricks-only
+
+# Run only Snowflake
+uv run main.py --snowflake-only
+
+# Combine flags: large warehouse, specific queries, all scenarios
+uv run main.py --warehouse-size large --queries 1-10 --scenario all
+```
 
 ### 4. Enrich Results with Cost and Performance Data
 
@@ -117,7 +147,7 @@ Both Snowflake and Databricks collect detailed cost and performance metrics in s
 Run **at least 45 minutes** after benchmark completion:
 
 ```bash
-uv run python snowflake/enrich_results.py
+uv run snowflake/enrich_results.py
 ```
 
 This enriches all unenriched queries in DuckDB with data from `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY`:
@@ -135,7 +165,7 @@ This enriches all unenriched queries in DuckDB with data from `SNOWFLAKE.ACCOUNT
 Run **at least 1-2 hours** after benchmark completion:
 
 ```bash
-uv run python databricks/enrich_results.py
+uv run databricks/enrich_results.py
 ```
 
 This enriches all unenriched queries in DuckDB with data from `system.query.history` and `system.billing.usage`:

@@ -11,12 +11,10 @@ uv run setup_config.py
 This script will:
 1. ✓ Prompt for your Snowflake connection name
 2. ✓ Prompt for Databricks credentials
-3. ✓ Automatically discover your SQL warehouses
-4. ✓ Let you select which warehouses to use for each size
-5. ✓ Discover available catalogs and schemas
-6. ✓ Generate a configured `.env` file
+3. ✓ Discover available catalogs and schemas
+4. ✓ Generate a configured `.env` file
 
-That's it! No manual copying of IDs required.
+**Note:** SQL Warehouses are created and destroyed automatically during benchmark runs. No manual warehouse configuration needed.
 
 ---
 
@@ -77,33 +75,7 @@ You should see:
 - Your user info
 - List of available SQL warehouses
 
-### Step 4: Create SQL Warehouses (if needed)
-
-You need 3 SQL warehouses for the benchmark:
-
-| Size | Purpose | Databricks Equivalent | Cluster Size |
-|------|---------|----------------------|--------------|
-| X-Small | Budget comparison | Snowflake Small | 2X-Small |
-| Small | **Primary baseline** | Snowflake Medium | X-Small or Small |
-| Large | Performance ceiling | Snowflake X-Large | Medium or Large |
-
-#### To Create a Warehouse:
-1. In Databricks, go to **SQL Warehouses** in the sidebar
-2. Click **Create SQL Warehouse**
-3. Configure:
-   - **Name**: `benchmark_wh_xsmall` (or small/large)
-   - **Cluster size**: Choose appropriate size
-   - **Type**: Choose "Pro" or "Serverless" (Serverless most comparable to Snowflake)
-   - **Auto stop**: 10 minutes (to save costs)
-4. Click **Create**
-5. **Copy the warehouse ID** from the URL or warehouse details
-
-#### Test SQL Connection:
-```bash
-uv run databricks/test_connection.py <warehouse-id>
-```
-
-### Step 5: Update Configuration
+### Step 4: Update Configuration
 
 Edit `.env` file in the project root and add your Databricks configuration:
 
@@ -112,12 +84,17 @@ export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
 export DATABRICKS_TOKEN=dapi1234567890abcdef...
 export DATABRICKS_CATALOG=your_catalog
 export DATABRICKS_SCHEMA=your_schema
-export DATABRICKS_WAREHOUSE_XSMALL=abc123def456
-export DATABRICKS_WAREHOUSE_SMALL=ghi789jkl012
-export DATABRICKS_WAREHOUSE_LARGE=mno345pqr678
 ```
 
-### Step 6: Next Steps
+**Note:** SQL Warehouses are created and destroyed automatically during benchmark runs. The benchmark creates Serverless SQL warehouses with the following sizes:
+
+| Size | Cluster Size | Purpose |
+|------|--------------|---------|
+| X-Small | 2X-Small | Budget comparison (equivalent to Snowflake Small) |
+| Small | Small | Primary baseline (equivalent to Snowflake Medium) |
+| Large | Large | Performance ceiling (equivalent to Snowflake X-Large) |
+
+### Step 5: Next Steps
 
 Once connectivity is working:
 1. ✓ Generate TPC-H dataset in Databricks (coming next)

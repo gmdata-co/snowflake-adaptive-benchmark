@@ -17,16 +17,7 @@ DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
 CATALOG = os.getenv("DATABRICKS_CATALOG")
 SCHEMA = os.getenv("DATABRICKS_SCHEMA")
 
-# SQL Warehouse configurations (from .env file - user-specific)
-# These are SERVERLESS SQL Warehouses (warehouse_type=PRO with enable_serverless_compute=True)
-# This is the correct configuration for fair comparison with Snowflake
-WAREHOUSES = {
-    "xsmall": os.getenv("DATABRICKS_WAREHOUSE_XSMALL"),
-    "small": os.getenv("DATABRICKS_WAREHOUSE_SMALL"),
-    "large": os.getenv("DATABRICKS_WAREHOUSE_LARGE"),
-}
-
-# Ephemeral Warehouse Configuration (for create/destroy pattern like Snowflake)
+# Warehouse Configuration - warehouses are created dynamically during benchmark runs
 WAREHOUSE_PREFIX = "benchmark_dbx"  # Prefix for ephemeral warehouse names
 WAREHOUSE_SIZES = ["xsmall", "small", "large"]  # Available warehouse sizes
 
