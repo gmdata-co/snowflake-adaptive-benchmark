@@ -3,9 +3,9 @@
 ## Groundrules
 
 - This project uses uv. Do not use the uv pip wrapper, only use uv native commands like uv add.
-- always run python using `uv run <name-of-file>`. no need to activate a venv.
+- always run python using uv run commands. no need to activate a venv.
 - use the logging module instead of `print()`
-- us the logger created in common/logging_config.py
+- use the logger created in common/logging_config.py
 - Use the snowflake CLI `snow` to run test queries or to do any setup. For example, if you need to figure out if your suggested SQL is valid, just run it real quick using `snow sql -q ...`
 - when using the snowflake cli, use the `--connection` flag with the value specified in the `.env` file's `SNOWFLAKE_CONNECTION` variable.
 - the goal is to create a python file that will run multiple queries against snowflake and databricks.
