@@ -1,18 +1,2 @@
-# Snwoflake vs Databricks Performance Comparison
-
-## Groundrules
-
-- This project uses uv. Do not use the uv pip wrapper, only use uv native commands like uv add.
-- always run python using uv run commands. no need to activate a venv.
-- use the logging module instead of `print()`
-- use the logger created in common/logging_config.py
-- Use the snowflake CLI `snow` to run test queries or to do any setup. For example, if you need to figure out if your suggested SQL is valid, just run it real quick using `snow sql -q ...`
-- when using the snowflake cli, use the `--connection` flag with the value specified in the `.env` file's `SNOWFLAKE_CONNECTION` variable.
-- the goal is to create a python file that will run multiple queries against snowflake and databricks.
-- the overall project plan is at `project_plan.md`.
-- dbx is short for databricks.
-- run `source ~/.zshrc` to get the databricks credentials loaded.
-- any time you need to connect to snowflake or dbx with python, use the global connections modules in the common folder: connections/databricks_connection.py and connections/snowflake_connection.py
-- whenever I mention duckDB, I mean the file called `benchmark_results.duckdb` in the project root.
-- in duckdb, the schema we use is always benchmark_results.main
-- if duckdb is locked when you try to use it, just stop and ask me to close it. Don't start doing crazy work arounds.
+Please read the @claude.md file every time before you do anything.
+Critical instructions on how to behave are found in @claude.md file in the project root

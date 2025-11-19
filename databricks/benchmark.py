@@ -5,48 +5,33 @@ Databricks TPC-H Benchmark Runner
 Executes TPC-H queries against Databricks SQL Warehouses and logs performance metrics.
 """
 
-import json
-import time
-import requests
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Set, List
+from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from uuid import UUID
 import argparse
 import sys
+import time
 
 # Add parent directory to path to import from common
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from databricks import sql
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.sql import (
-    CreateWarehouseRequestWarehouseType,
-    SpotInstancePolicy,
-)
 from common.connections import DatabricksConnection
 from common.storage import BenchmarkStorage
-# Initialize centralized logging
 from common.logging_config import get_logger
 from .config import (
     DATABRICKS_HOST,
     DATABRICKS_TOKEN,
-    WAREHOUSES,
-    WAREHOUSE_PREFIX,
-    WAREHOUSE_SIZES,
-    WAREHOUSE_SIZE_MAP,
-    WAREHOUSE_AUTO_STOP_MINS,
-    WAREHOUSE_MAX_NUM_CLUSTERS,
     CATALOG,
     SCHEMA,
     NUM_RUNS,
     NUM_QUERIES,
     SCALE_FACTOR,
-    APP_NAME,
-    QUERIES_DIR,
     DUCKDB_PATH,
+    WAREHOUSE_SIZES,
 )
+from .warehouse_manager import WarehouseManager
+from .query_executor import QueryExecutor
 
 logger = get_logger(__name__)
 
@@ -59,20 +44,16 @@ class DatabricksBenchmark:
 
     def __init__(
         self,
-        warehouse_size: str = None,
         scale_factor: int = SCALE_FACTOR,
         run_id: str = None,
     ):
         """Initialize benchmark runner.
 
         Args:
-            warehouse_size: Specific warehouse size for this instance (e.g., "xsmall", "small", "large")
             scale_factor: TPC-H scale factor (e.g., 100, 1000)
-            run_id: Optional run ID to use (for parallel instances)
+            run_id: Optional run ID to use (for parallel instances or unified scenarios)
         """
-        self.warehouse_size = warehouse_size
         self.scale_factor = scale_factor
-        self.warehouse_id = WAREHOUSES.get(warehouse_size) if warehouse_size else None
 
         # Connection will be created when connect() is called
         self.dbx_connection: Optional[DatabricksConnection] = None
@@ -82,17 +63,9 @@ class DatabricksBenchmark:
         self.storage = storage
         self.run_id = run_id if run_id else self._get_next_run_id()
 
-        # Track warehouses created by this benchmark (for cleanup)
-        self.created_warehouses: List[Dict[str, str]] = []  # List of {size, id} dicts
-
-        # Track warehouse state for run type classification
-        self.warehouse_started = False  # True after first query executes
-        self.queries_executed: Set[int] = (
-            set()
-        )  # Set of query numbers that have been executed
-
-        # Initialize Databricks SDK client for warehouse management
-        self.workspace_client: Optional[WorkspaceClient] = None
+        # Managers (initialized when needed)
+        self.warehouse_manager: Optional[WarehouseManager] = None
+        self.query_executor: Optional[QueryExecutor] = None
 
     def _get_next_run_id(self) -> str:
         """
@@ -101,460 +74,41 @@ class DatabricksBenchmark:
         Returns:
             Zero-padded 3-digit run ID (e.g., "001", "002", "003")
         """
-        try:
-            # Query DuckDB for the maximum numeric run_id from both tables
-            results_sf = self.storage.query("""
-                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
-                FROM snowflake_results
-                WHERE run_id ~ '^[0-9]+$'
-            """)
-            results_dbx = self.storage.query("""
-                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
-                FROM databricks_results
-                WHERE run_id ~ '^[0-9]+$'
-            """)
+        return self.storage.get_next_run_id()
 
-            max_ids = []
-            if results_sf and results_sf[0][0] is not None:
-                max_ids.append(results_sf[0][0])
-            if results_dbx and results_dbx[0][0] is not None:
-                max_ids.append(results_dbx[0][0])
-
-            if max_ids:
-                max_run_id = max(max_ids)
-                next_run_id = max_run_id + 1
-                return f"{next_run_id:03d}"
-            else:
-                return "001"
-        except Exception as e:
-            logger.warning(f"Could not read existing run IDs: {e}. Starting from 001")
-            return "001"
-
-    def _get_warehouse_name(self, warehouse_size: str) -> str:
-        """
-        Generate warehouse name with run_id suffix.
+    def connect(self, warehouse_id: str):
+        """Establish connection to Databricks and initialize query executor.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
-
-        Returns:
-            Full warehouse name (e.g., "benchmark_dbx_small_001")
+            warehouse_id: Warehouse ID to connect to
         """
-        return f"{WAREHOUSE_PREFIX}_{warehouse_size}_{self.run_id}"
-
-    def _ensure_workspace_client(self):
-        """Ensure WorkspaceClient is initialized."""
-        if self.workspace_client is None:
-            self.workspace_client = WorkspaceClient(
-                host=DATABRICKS_HOST,
-                token=DATABRICKS_TOKEN,
-            )
-
-    def _create_warehouse(self, warehouse_size: str) -> str:
-        """
-        Create a Serverless SQL warehouse for this benchmark run.
-
-        Args:
-            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
-
-        Returns:
-            ID of the created warehouse
-        """
-        warehouse_name = self._get_warehouse_name(warehouse_size)
-        cluster_size = WAREHOUSE_SIZE_MAP[warehouse_size]
-
-        logger.info(f"Creating warehouse: {warehouse_name} (size: {cluster_size})")
-
-        self._ensure_workspace_client()
-
-        # Create Serverless SQL warehouse
-        warehouse = self.workspace_client.warehouses.create(
-            name=warehouse_name,
-            cluster_size=cluster_size,
-            warehouse_type=CreateWarehouseRequestWarehouseType.PRO,
-            enable_serverless_compute=True,
-            max_num_clusters=WAREHOUSE_MAX_NUM_CLUSTERS,
-            auto_stop_mins=WAREHOUSE_AUTO_STOP_MINS,
-            spot_instance_policy=SpotInstancePolicy.COST_OPTIMIZED,
-        )
-
-        warehouse_id = warehouse.id
-        logger.info(f"✅ Created warehouse: {warehouse_name} (ID: {warehouse_id})")
-
-        # Track for cleanup
-        self.created_warehouses.append({
-            "size": warehouse_size,
-            "id": warehouse_id,
-            "name": warehouse_name,
-        })
-
-        return warehouse_id
-
-    def _destroy_warehouse(self, warehouse_id: str, warehouse_name: str):
-        """
-        Destroy a warehouse created by this benchmark.
-
-        Args:
-            warehouse_id: ID of warehouse to destroy
-            warehouse_name: Name of warehouse (for logging)
-        """
-        import time
-
-        logger.info(f"Destroying warehouse: {warehouse_name} (ID: {warehouse_id})")
-
-        try:
-            # Add a small delay to ensure all connections have closed
-            time.sleep(2)
-
-            self._ensure_workspace_client()
-            self.workspace_client.warehouses.delete(id=warehouse_id)
-            logger.info(f"✅ Destroyed warehouse: {warehouse_name}")
-        except Exception as e:
-            logger.error(f"❌ Failed to destroy warehouse {warehouse_name}: {e}")
-
-    def _create_all_warehouses(self, warehouse_sizes: List[str]) -> Dict[str, str]:
-        """
-        Create all warehouses needed for this benchmark run.
-
-        Args:
-            warehouse_sizes: List of warehouse size keys to create
-
-        Returns:
-            Dictionary mapping warehouse size to warehouse ID
-        """
-        logger.info("\n" + "=" * 70)
-        logger.info("CREATING WAREHOUSES")
-        logger.info("=" * 70)
-
-        warehouse_id_map = {}
-        for warehouse_size in warehouse_sizes:
-            warehouse_id = self._create_warehouse(warehouse_size)
-            warehouse_id_map[warehouse_size] = warehouse_id
-
-        logger.info("=" * 70)
-        return warehouse_id_map
-
-    def _destroy_all_warehouses(self):
-        """Destroy all warehouses created by this benchmark run."""
-        if not self.created_warehouses:
-            return
-
-        logger.info("\n" + "=" * 70)
-        logger.info("CLEANING UP WAREHOUSES")
-        logger.info("=" * 70)
-
-        for warehouse_info in self.created_warehouses:
-            self._destroy_warehouse(warehouse_info["id"], warehouse_info["name"])
-
-        logger.info("=" * 70)
-
-    def _stop_warehouse(self, warehouse_id: str, wait_for_stopped: bool = True):
-        """
-        Stop a warehouse using Databricks REST API.
-
-        Args:
-            warehouse_id: ID of the warehouse to stop
-            wait_for_stopped: If True, wait for warehouse to fully stop (default: True)
-        """
-        logger.info(f"Stopping warehouse: {warehouse_id}")
-
-        try:
-            # Clean hostname
-            hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
-            url = f"https://{hostname}/api/2.0/sql/warehouses/{warehouse_id}/stop"
-
-            headers = {
-                "Authorization": f"Bearer {DATABRICKS_TOKEN}",
-                "Content-Type": "application/json",
-            }
-
-            response = requests.post(url, headers=headers)
-            response.raise_for_status()
-
-            logger.info(f"✅ Stopped warehouse: {warehouse_id}")
-
-            # Wait for warehouse to fully stop (check status) - optional
-            if wait_for_stopped:
-                self._wait_for_warehouse_state(warehouse_id, "STOPPED")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to stop warehouse {warehouse_id}: {e}")
-            raise
-
-    def _start_warehouse(self, warehouse_id: str):
-        """
-        Start a warehouse using Databricks REST API.
-
-        Args:
-            warehouse_id: ID of the warehouse to start
-        """
-        logger.info(f"Starting warehouse: {warehouse_id}")
-
-        try:
-            # Clean hostname
-            hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
-            url = f"https://{hostname}/api/2.0/sql/warehouses/{warehouse_id}/start"
-
-            headers = {
-                "Authorization": f"Bearer {DATABRICKS_TOKEN}",
-                "Content-Type": "application/json",
-            }
-
-            response = requests.post(url, headers=headers)
-            response.raise_for_status()
-
-            logger.info(f"✅ Started warehouse: {warehouse_id}")
-
-            # Wait for warehouse to be ready
-            self._wait_for_warehouse_state(warehouse_id, "RUNNING")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to start warehouse {warehouse_id}: {e}")
-            raise
-
-    def _get_warehouse_state(self, warehouse_id: str) -> str:
-        """
-        Get current state of a warehouse.
-
-        Args:
-            warehouse_id: ID of the warehouse
-
-        Returns:
-            State string (e.g., "RUNNING", "STOPPED", "STARTING", "STOPPING")
-        """
-        # Clean hostname
-        hostname = DATABRICKS_HOST.replace("https://", "").replace("http://", "")
-        url = f"https://{hostname}/api/2.0/sql/warehouses/{warehouse_id}"
-
-        headers = {
-            "Authorization": f"Bearer {DATABRICKS_TOKEN}",
-        }
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        return response.json().get("state", "UNKNOWN")
-
-    def _wait_for_warehouse_state(self, warehouse_id: str, target_state: str, timeout: int = 300):
-        """
-        Wait for warehouse to reach target state.
-
-        Args:
-            warehouse_id: ID of the warehouse
-            target_state: Target state to wait for (e.g., "RUNNING", "STOPPED")
-            timeout: Maximum time to wait in seconds
-        """
-        start_time = time.time()
-        last_state = None
-        while time.time() - start_time < timeout:
-            state = self._get_warehouse_state(warehouse_id)
-            if state == target_state:
-                logger.info(f"✅ Warehouse {warehouse_id} is {target_state}")
-                return
-            # Log state changes at INFO level, not DEBUG
-            if state != last_state:
-                logger.info(f"Waiting for warehouse {warehouse_id} to be {target_state} (current: {state})")
-                last_state = state
-            time.sleep(5)
-
-        raise TimeoutError(f"Warehouse {warehouse_id} did not reach {target_state} within {timeout}s")
-
-    def connect(self, warehouse_id: Optional[str] = None):
-        """Establish connection to Databricks using the configured warehouse.
-
-        Args:
-            warehouse_id: Optional warehouse ID to connect to (overrides self.warehouse_id)
-        """
-        wh_id = warehouse_id or self.warehouse_id
-        if not wh_id:
-            raise ValueError("warehouse_id must be specified to connect")
-
         # Use DatabricksConnection abstraction
         self.dbx_connection = DatabricksConnection(
             host=DATABRICKS_HOST,
             token=DATABRICKS_TOKEN,
-            warehouse_id=wh_id,
+            warehouse_id=warehouse_id,
             catalog=CATALOG,
             schema=SCHEMA,
         )
         self.dbx_connection.connect()
 
-        # Store reference to the underlying connection for backward compatibility
+        # Store reference to the underlying connection
         self.conn = self.dbx_connection.connection
+
+        # Initialize query executor (warehouse manager doesn't need connection)
+        self.query_executor = QueryExecutor(
+            connection=self.conn,
+            storage=self.storage,
+            run_id=self.run_id,
+            scale_factor=self.scale_factor,
+        )
 
     def disconnect(self):
         """Close Databricks connection."""
         if self.dbx_connection:
             self.dbx_connection.disconnect()
             self.conn = None
-
-    def load_query(self, query_num: int) -> str:
-        """Load TPC-H query from file."""
-        query_file = QUERIES_DIR / f"q{query_num:02d}.sql"
-        if not query_file.exists():
-            raise FileNotFoundError(f"Query file not found: {query_file}")
-
-        with open(query_file, "r") as f:
-            query_sql = f.read().strip()
-
-        return query_sql
-
-    def execute_query(
-        self, query_num: int, run_num: int, warehouse_id: str, warehouse_size: str
-    ) -> Dict[str, Any]:
-        """
-        Execute a single TPC-H query and capture metrics.
-
-        Args:
-            query_num: Query number (1-22)
-            run_num: Run iteration (1-4)
-            warehouse_id: ID of the warehouse
-            warehouse_size: Size of the warehouse (XSMALL, SMALL, LARGE)
-
-        Returns:
-            Dictionary with query execution metrics
-        """
-        # Determine run type based on warehouse state
-        if not self.warehouse_started:
-            # First query on this warehouse = cold
-            run_type = "cold"
-        elif query_num not in self.queries_executed:
-            # Warehouse is running, but this query hasn't run yet = semi-warm
-            run_type = "semi-warm"
-        else:
-            # This query has already run on this warehouse = warm
-            run_type = "warm"
-
-        # Create JSON structured query tag
-        query_tag = {
-            "app": APP_NAME,
-            "workload_id": f"q{query_num:02d}",
-            "run_id": self.run_id,
-        }
-
-        # Include warehouse size in log output for clarity in parallel execution
-        platform_prefix = "[DATABRICKS]"
-        wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
-        log_prefix = f"{platform_prefix} {wh_prefix} [{run_type:10s}] Run {run_num}/{NUM_RUNS}: Query {query_num:2d}"
-
-        # Load query SQL
-        try:
-            query_sql = self.load_query(query_num)
-        except FileNotFoundError as e:
-            logger.error(f"{log_prefix} ❌ Error: {e}")
-            return self._create_error_result(
-                query_num,
-                run_num,
-                run_type,
-                json.dumps(query_tag),
-                warehouse_id,
-                warehouse_size,
-                str(e),
-            )
-
-        # Add query tag as SQL comment
-        query_tag_json = json.dumps(query_tag)
-        tagged_query = f"/* BENCHMARK: {query_tag_json} */\n{query_sql}"
-
-        # Log query start
-        logger.info(f"{log_prefix} 🚀 Starting...")
-
-        # Execute query and measure time
-        start_time = time.time()
-        timestamp = datetime.utcnow().isoformat()
-        error_message = None
-        statement_id = None
-        rows_produced = 0
-
-        try:
-            # Execute query
-            cursor = self.conn.cursor()
-            cursor.execute(tagged_query)
-
-            # Get statement_id from cursor
-            # Reference: https://stackoverflow.com/questions/77961077/
-            try:
-                if hasattr(cursor, 'active_op_handle') and cursor.active_op_handle is not None:
-                    if hasattr(cursor.active_op_handle, 'operationId'):
-                        # Convert GUID bytes to UUID string
-                        guid_bytes = cursor.active_op_handle.operationId.guid
-                        statement_id = str(UUID(bytes=guid_bytes))
-                        logger.debug(f"{log_prefix} Captured statement_id: {statement_id}")
-            except Exception as e:
-                # If we can't get the statement_id, log warning but continue
-                logger.warning(f"{log_prefix} Failed to capture statement_id: {e}")
-
-            # Close cursor immediately - don't fetch results for benchmarking
-            # We only care about query execution time, not data transfer time
-            cursor.close()
-
-            # Row count not available (not fetching results)
-            rows_produced = -1
-
-        except Exception as e:
-            error_message = str(e)
-            logger.error(f"{log_prefix} ❌ Error: {error_message[:50]}")
-
-        execution_time = time.time() - start_time
-
-        if error_message is None:
-            logger.info(
-                f"{log_prefix} ✅ {execution_time:.2f}s"
-            )
-            # Mark warehouse as started and track this query
-            self.warehouse_started = True
-            self.queries_executed.add(query_num)
-
-        # Create result record
-        result = {
-            "run_id": self.run_id,
-            "timestamp": timestamp,
-            "platform": "databricks",
-            "scenario": "primary",
-            "warehouse_name": warehouse_id,
-            "warehouse_size": warehouse_size,
-            "query_num": query_num,
-            "run_num": run_num,
-            "run_type": run_type,
-            "query_tag": json.dumps(query_tag),  # Store as JSON string
-            "query_id": statement_id or "",
-            "execution_time_sec": round(execution_time, 3),
-            "rows_produced": rows_produced,
-            "error_message": error_message or "",
-        }
-
-        # Log to DuckDB immediately
-        self.storage.write_databricks_result(result)
-
-        return result
-
-    def _create_error_result(
-        self,
-        query_num: int,
-        run_num: int,
-        run_type: str,
-        query_tag: str,
-        warehouse_id: str,
-        warehouse_size: str,
-        error_message: str,
-    ) -> Dict[str, Any]:
-        """Create a result dictionary for an error case."""
-        return {
-            "run_id": self.run_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "platform": "databricks",
-            "scenario": "primary",
-            "warehouse_name": warehouse_id,
-            "warehouse_size": warehouse_size,
-            "query_num": query_num,
-            "run_num": run_num,
-            "run_type": run_type,
-            "query_tag": query_tag,
-            "query_id": "",
-            "execution_time_sec": 0.0,
-            "rows_produced": 0,
-            "error_message": error_message,
-        }
+            self.query_executor = None
 
     def run_warehouse_benchmark(
         self,
@@ -562,7 +116,8 @@ class DatabricksBenchmark:
         warehouse_id: str,
         query_nums: list[int],
         num_runs: int,
-    ) -> Dict[str, Any]:
+        scenario: str = "normal",
+    ):
         """
         Run benchmark for a single warehouse size.
 
@@ -573,11 +128,8 @@ class DatabricksBenchmark:
             warehouse_id: ID of the warehouse to use
             query_nums: List of query numbers to run
             num_runs: Number of runs per query
-
-        Returns:
-            Dictionary with execution summary
+            scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
         """
-
         logger.info(
             f"\n[{warehouse_size.upper()}] Starting benchmark on warehouse {warehouse_id}"
         )
@@ -588,39 +140,27 @@ class DatabricksBenchmark:
             for query_num in query_nums:
                 for run_num in range(1, num_runs + 1):
                     # Execute query (run_type is determined automatically)
-                    self.execute_query(
+                    self.query_executor.execute_query(
                         query_num=query_num,
                         run_num=run_num,
                         warehouse_id=warehouse_id,
                         warehouse_size=warehouse_size.upper(),
+                        scenario=scenario,
                     )
 
             logger.info(
                 f"\n[{warehouse_size.upper()}] ✅ Completed all queries on {warehouse_id}"
             )
 
-            return {
-                "warehouse_size": warehouse_size,
-                "warehouse_id": warehouse_id,
-                "queries_completed": len(query_nums) * num_runs,
-                "success": True,
-            }
-
         except Exception as e:
             logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
-            return {
-                "warehouse_size": warehouse_size,
-                "warehouse_id": warehouse_id,
-                "success": False,
-                "error": str(e),
-            }
+            raise
 
     def run_cold_start_trial(
         self,
-        warehouse_size: str,
-        warehouse_id: str,
+        warehouse_sizes: list[str] = None,
         query_nums: list[int] = None,
-    ) -> Dict[str, Any]:
+    ):
         """
         Run cold start trial: stop warehouse between each query execution.
 
@@ -629,60 +169,88 @@ class DatabricksBenchmark:
         for the next query.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
-            warehouse_id: ID of the warehouse to use
+            warehouse_sizes: List of warehouse sizes to test (default: ["small"])
             query_nums: List of query numbers to run (default: [1, 3, 5, 10, 18])
-
-        Returns:
-            Dictionary with execution summary
         """
+        scenario = "coldstart"
+
+        if warehouse_sizes is None:
+            warehouse_sizes = ["small"]
         if query_nums is None:
             query_nums = [1, 3, 5, 10, 18]
 
-        logger.info(
-            f"\n[{warehouse_size.upper()}] Starting COLD START trial on warehouse {warehouse_id}"
+        logger.info("=" * 70)
+        logger.info("DATABRICKS COLD START TRIAL")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info(f"Queries: {query_nums}")
+        logger.info("=" * 70)
+
+        # Initialize warehouse manager
+        self.warehouse_manager = WarehouseManager(run_id=self.run_id)
+
+        # Create warehouses with scenario in name
+        warehouse_id_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario
         )
-        logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_id}")
-        logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
 
         try:
-            # Execute each query with stop/start cycle
-            for query_num in query_nums:
-                # Start warehouse before query
-                logger.info(f"\n[{warehouse_size.upper()}] Starting warehouse for query {query_num}")
-                self._start_warehouse(warehouse_id)
+            # Execute each query with stop/start cycle for each warehouse
+            for warehouse_size in warehouse_sizes:
+                warehouse_id = warehouse_id_map[warehouse_size]
 
-                # Execute query once (run_num=1, always cold start)
-                self.execute_query(
-                    query_num=query_num,
-                    run_num=1,
-                    warehouse_id=warehouse_id,
-                    warehouse_size=warehouse_size.upper(),
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] Starting COLD START trial on warehouse {warehouse_id}"
                 )
+                logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
 
-                # Stop warehouse after query (don't wait for it to fully stop)
-                logger.info(f"[{warehouse_size.upper()}] Stopping warehouse after query {query_num}")
-                self._stop_warehouse(warehouse_id, wait_for_stopped=False)
+                # Connect for this warehouse
+                self.connect(warehouse_id=warehouse_id)
 
-            logger.info(
-                f"\n[{warehouse_size.upper()}] ✅ Completed COLD START trial on {warehouse_id}"
-            )
+                try:
+                    for query_num in query_nums:
+                        # Start warehouse before query
+                        logger.info(
+                            f"\n[{warehouse_size.upper()}] Starting warehouse for query {query_num}"
+                        )
+                        self.warehouse_manager.start_warehouse(warehouse_id)
 
-            return {
-                "warehouse_size": warehouse_size,
-                "warehouse_id": warehouse_id,
-                "queries_completed": len(query_nums),
-                "success": True,
-            }
+                        # Execute query once (run_num=1, always cold start)
+                        self.query_executor.execute_query(
+                            query_num=query_num,
+                            run_num=1,
+                            warehouse_id=warehouse_id,
+                            warehouse_size=warehouse_size.upper(),
+                            scenario=scenario,
+                            force_run_type="cold",  # Force cold run type
+                        )
 
-        except Exception as e:
-            logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
-            return {
-                "warehouse_size": warehouse_size,
-                "warehouse_id": warehouse_id,
-                "success": False,
-                "error": str(e),
-            }
+                        # Stop warehouse after query (don't wait for it to fully stop)
+                        logger.info(
+                            f"[{warehouse_size.upper()}] Stopping warehouse after query {query_num}"
+                        )
+                        self.warehouse_manager.stop_warehouse(
+                            warehouse_id, wait_for_stopped=False
+                        )
+
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] ✅ Completed COLD START trial on {warehouse_id}"
+                    )
+                finally:
+                    self.disconnect()
+
+        finally:
+            # Always clean up warehouses
+            self.warehouse_manager.destroy_all_warehouses()
+
+        logger.info("\n" + "=" * 70)
+        logger.info("COLD START TRIAL COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {DUCKDB_PATH}")
+        logger.info(f"Run ID: {self.run_id}")
 
     def run_benchmark(
         self,
@@ -700,6 +268,8 @@ class DatabricksBenchmark:
             num_runs: Number of runs per query (default: 4)
             parallel: If True, run warehouses in parallel (default: True)
         """
+        scenario = "normal"
+
         # Default to small warehouse only (use --warehouse flag for multiple sizes)
         if warehouse_sizes is None:
             warehouse_sizes = ["small"]
@@ -710,6 +280,7 @@ class DatabricksBenchmark:
         logger.info("DATABRICKS TPC-H BENCHMARK")
         logger.info("=" * 70)
         logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
         logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {len(query_nums)} queries")
@@ -721,27 +292,27 @@ class DatabricksBenchmark:
         )
         logger.info("=" * 70)
 
-        # Create all warehouses upfront
-        warehouse_id_map = self._create_all_warehouses(warehouse_sizes)
+        # Initialize warehouse manager
+        self.warehouse_manager = WarehouseManager(run_id=self.run_id)
+
+        # Create all warehouses upfront with scenario in name
+        warehouse_id_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario
+        )
 
         try:
             if not parallel:
                 # Sequential execution
                 for warehouse_size in warehouse_sizes:
                     warehouse_id = warehouse_id_map[warehouse_size]
-                    # Create instance for this warehouse
-                    instance = DatabricksBenchmark(
-                        warehouse_size=warehouse_size,
-                        scale_factor=self.scale_factor,
-                        run_id=self.run_id,
-                    )
-                    # Share created warehouses list for cleanup
-                    instance.created_warehouses = self.created_warehouses
-                    instance.connect(warehouse_id=warehouse_id)
+                    # Connect for this warehouse
+                    self.connect(warehouse_id=warehouse_id)
                     try:
-                        instance.run_warehouse_benchmark(warehouse_size, warehouse_id, query_nums, num_runs)
+                        self.run_warehouse_benchmark(
+                            warehouse_size, warehouse_id, query_nums, num_runs, scenario
+                        )
                     finally:
-                        instance.disconnect()
+                        self.disconnect()
             else:
                 # Parallel execution across warehouses
                 logger.info("\n🚀 Launching parallel execution across all warehouses...")
@@ -750,14 +321,12 @@ class DatabricksBenchmark:
                 # Each needs its own connection but shares the same run_id
                 benchmark_instances = {}
                 for warehouse_size in warehouse_sizes:
-                    warehouse_id = warehouse_id_map[warehouse_size]
                     instance = DatabricksBenchmark(
-                        warehouse_size=warehouse_size,
                         scale_factor=self.scale_factor,
                         run_id=self.run_id,  # Share the same run_id
                     )
-                    # Share created warehouses list for cleanup
-                    instance.created_warehouses = self.created_warehouses
+                    # Share warehouse manager
+                    instance.warehouse_manager = self.warehouse_manager
                     benchmark_instances[warehouse_size] = instance
 
                 try:
@@ -767,7 +336,9 @@ class DatabricksBenchmark:
                         instance.connect(warehouse_id=warehouse_id)
 
                     # Use ThreadPoolExecutor to run warehouses in parallel
-                    with ThreadPoolExecutor(max_workers=len(warehouse_sizes)) as executor:
+                    with ThreadPoolExecutor(
+                        max_workers=len(warehouse_sizes)
+                    ) as executor:
                         # Submit all warehouse benchmarks
                         future_to_warehouse = {
                             executor.submit(
@@ -776,26 +347,20 @@ class DatabricksBenchmark:
                                 warehouse_id_map[warehouse_size],
                                 query_nums,
                                 num_runs,
+                                scenario,
                             ): warehouse_size
                             for warehouse_size, instance in benchmark_instances.items()
                         }
 
                         # Wait for completion and collect results
-                        results = {}
                         for future in as_completed(future_to_warehouse):
                             warehouse_size = future_to_warehouse[future]
                             try:
-                                result = future.result()
-                                results[warehouse_size] = result
+                                future.result()
                             except Exception as e:
                                 logger.error(
                                     f"\n❌ Exception in {warehouse_size} warehouse: {e}"
                                 )
-                                results[warehouse_size] = {
-                                    "warehouse_size": warehouse_size,
-                                    "success": False,
-                                    "error": str(e),
-                                }
 
                 finally:
                     # Disconnect all instances BEFORE warehouse cleanup
@@ -804,12 +369,11 @@ class DatabricksBenchmark:
                         instance.disconnect()
 
                     # Add a small delay to ensure connections are fully closed
-                    import time
                     time.sleep(3)
 
         finally:
             # Always clean up warehouses (after connections are closed)
-            self._destroy_all_warehouses()
+            self.warehouse_manager.destroy_all_warehouses()
 
         logger.info("\n" + "=" * 70)
         logger.info("BENCHMARK COMPLETE")
@@ -852,6 +416,12 @@ def main():
         default=SCALE_FACTOR,
         help=f"TPC-H scale factor (default: {SCALE_FACTOR}). Common values: 100 (100GB), 1000 (1TB), 10000 (10TB)",
     )
+    parser.add_argument(
+        "--scenario",
+        choices=["normal", "coldstart"],
+        default="normal",
+        help="Scenario to run (default: normal)",
+    )
 
     args = parser.parse_args()
 
@@ -860,15 +430,27 @@ def main():
     if args.queries:
         query_nums = [int(q.strip()) for q in args.queries.split(",")]
 
-    # Run benchmark
+    # Create benchmark instance
     benchmark = DatabricksBenchmark(scale_factor=args.scale_factor)
 
-    benchmark.run_benchmark(
-        warehouse_sizes=args.warehouse,
-        query_nums=query_nums,
-        num_runs=args.runs,
-        parallel=not args.sequential,
-    )
+    try:
+        if args.scenario == "coldstart":
+            # Run cold start trial
+            benchmark.run_cold_start_trial(
+                warehouse_sizes=args.warehouse, query_nums=query_nums
+            )
+        else:
+            # Run normal benchmark
+            benchmark.run_benchmark(
+                warehouse_sizes=args.warehouse,
+                query_nums=query_nums,
+                num_runs=args.runs,
+                parallel=not args.sequential,
+            )
+    finally:
+        # Disconnect if connected
+        if benchmark.conn:
+            benchmark.disconnect()
 
 
 if __name__ == "__main__":

@@ -16,3 +16,4 @@
 - whenever I mention duckDB, I mean the file called `benchmark_results.duckdb` in the project root.
 - in duckdb, the schema we use is always benchmark_results.main
 - if duckdb is locked when you try to use it, just stop and ask me to close it. Don't start doing crazy work arounds.
+- after you write a bunch of python code, run `uvx ruff check --fix` to make sure unused imports and other linting issues are cleaned up. Please inspect the output of this command to see if there were any unfixable violations, and help fix them.

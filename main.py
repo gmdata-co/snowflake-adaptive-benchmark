@@ -58,12 +58,14 @@ def run_benchmark(
         logger.info("\n❄️  Running Snowflake benchmark...")
         try:
             sf_benchmark = SnowflakeBenchmark(run_id=run_id)
+            sf_benchmark.connect()
             sf_benchmark.run_benchmark(
                 warehouse_sizes=warehouse_sizes_snow,
                 query_nums=query_nums,
                 num_runs=1,
                 parallel=False,  # Run sequentially within Snowflake
             )
+            sf_benchmark.disconnect()
             logger.info("✅ Snowflake benchmark completed")
         except Exception as e:
             logger.error(f"❌ Snowflake benchmark failed: {e}", exc_info=True)
@@ -132,24 +134,11 @@ def run_cold_start_trial(
         try:
             sf_benchmark = SnowflakeBenchmark(run_id=run_id)
             sf_benchmark.connect()
-
-            # Create warehouses
-            if warehouse_sizes_snow is None:
-                warehouse_sizes_snow = ["medium"]
-
-            sf_benchmark._create_all_warehouses(warehouse_sizes_snow)
-
-            try:
-                for warehouse_size in warehouse_sizes_snow:
-                    sf_benchmark.run_cold_start_trial(
-                        warehouse_size=warehouse_size,
-                        query_nums=query_nums,
-                    )
-            finally:
-                # Clean up warehouses
-                sf_benchmark._destroy_all_warehouses()
-                sf_benchmark.disconnect()
-
+            sf_benchmark.run_cold_start_trial(
+                warehouse_sizes=warehouse_sizes_snow,
+                query_nums=query_nums,
+            )
+            sf_benchmark.disconnect()
             logger.info("✅ Snowflake cold start trial completed")
         except Exception as e:
             logger.error(f"❌ Snowflake cold start trial failed: {e}", exc_info=True)
@@ -160,32 +149,10 @@ def run_cold_start_trial(
         logger.info("\n🧱 Running Databricks cold start trial...")
         try:
             dbx_benchmark = DatabricksBenchmark(run_id=run_id)
-
-            # Create warehouses
-            if warehouse_sizes_dbx is None:
-                warehouse_sizes_dbx = ["small"]
-
-            warehouse_id_map = dbx_benchmark._create_all_warehouses(warehouse_sizes_dbx)
-
-            try:
-                for warehouse_size in warehouse_sizes_dbx:
-                    warehouse_id = warehouse_id_map[warehouse_size]
-
-                    # Connect for this warehouse
-                    dbx_benchmark.connect(warehouse_id=warehouse_id)
-
-                    try:
-                        dbx_benchmark.run_cold_start_trial(
-                            warehouse_size=warehouse_size,
-                            warehouse_id=warehouse_id,
-                            query_nums=query_nums,
-                        )
-                    finally:
-                        dbx_benchmark.disconnect()
-            finally:
-                # Clean up warehouses
-                dbx_benchmark._destroy_all_warehouses()
-
+            dbx_benchmark.run_cold_start_trial(
+                warehouse_sizes=warehouse_sizes_dbx,
+                query_nums=query_nums,
+            )
             logger.info("✅ Databricks cold start trial completed")
         except Exception as e:
             logger.error(f"❌ Databricks cold start trial failed: {e}", exc_info=True)
@@ -193,6 +160,120 @@ def run_cold_start_trial(
 
     logger.info("\n" + "=" * 80)
     logger.info("✅ All cold start trials completed")
+    logger.info("=" * 80)
+
+
+def run_all_scenarios(
+    warehouse_sizes_snow: Optional[List[str]] = None,
+    warehouse_sizes_dbx: Optional[List[str]] = None,
+    query_nums: Optional[List[int]] = None,
+    run_snowflake: bool = True,
+    run_databricks: bool = True,
+):
+    """
+    Run ALL scenarios with a single shared run_id for comparison.
+
+    Args:
+        warehouse_sizes_snow: Snowflake warehouse sizes (default: ["medium"])
+        warehouse_sizes_dbx: Databricks warehouse sizes (default: ["small"])
+        query_nums: Query numbers to run (default: all 1-22 for normal, specific for cold start)
+        run_snowflake: Whether to run Snowflake (default: True)
+        run_databricks: Whether to run Databricks (default: True)
+    """
+    logger.info("🚀 Running ALL scenarios with unified Run ID")
+    logger.info("=" * 80)
+
+    # Generate SINGLE run_id for all scenarios
+    storage = BenchmarkStorage(DUCKDB_PATH)
+    run_id = storage.get_next_run_id()
+    logger.info(f"📊 Unified Run ID: {run_id}")
+    logger.info("=" * 80)
+
+    # Import benchmark classes
+    from snowflake.benchmark import SnowflakeBenchmark
+    from databricks.benchmark import DatabricksBenchmark
+
+    # Default warehouse sizes
+    if warehouse_sizes_snow is None:
+        warehouse_sizes_snow = ["medium"]
+    if warehouse_sizes_dbx is None:
+        warehouse_sizes_dbx = ["small"]
+
+    # SCENARIO 1: Normal Benchmark
+    logger.info("\n" + "=" * 80)
+    logger.info("SCENARIO 1: NORMAL BENCHMARK")
+    logger.info("=" * 80)
+
+    if run_snowflake:
+        logger.info("\n❄️  Running Snowflake normal benchmark...")
+        try:
+            sf_benchmark = SnowflakeBenchmark(run_id=run_id)
+            sf_benchmark.connect()
+            sf_benchmark.run_benchmark(
+                warehouse_sizes=warehouse_sizes_snow,
+                query_nums=query_nums,
+                num_runs=1,
+                parallel=False,
+            )
+            sf_benchmark.disconnect()
+            logger.info("✅ Snowflake normal benchmark completed")
+        except Exception as e:
+            logger.error(f"❌ Snowflake normal benchmark failed: {e}", exc_info=True)
+            raise
+
+    if run_databricks:
+        logger.info("\n🧱 Running Databricks normal benchmark...")
+        try:
+            dbx_benchmark = DatabricksBenchmark(run_id=run_id)
+            dbx_benchmark.run_benchmark(
+                warehouse_sizes=warehouse_sizes_dbx,
+                query_nums=query_nums,
+                num_runs=1,
+                parallel=False,
+            )
+            logger.info("✅ Databricks normal benchmark completed")
+        except Exception as e:
+            logger.error(f"❌ Databricks normal benchmark failed: {e}", exc_info=True)
+            raise
+
+    # SCENARIO 2: Cold Start Trial
+    logger.info("\n" + "=" * 80)
+    logger.info("SCENARIO 2: COLD START TRIAL")
+    logger.info("=" * 80)
+
+    # For cold start, use specific queries if not provided
+    cold_start_queries = query_nums if query_nums else [1, 3, 5, 10, 18]
+
+    if run_snowflake:
+        logger.info("\n❄️  Running Snowflake cold start trial...")
+        try:
+            sf_benchmark = SnowflakeBenchmark(run_id=run_id)  # SAME run_id!
+            sf_benchmark.connect()
+            sf_benchmark.run_cold_start_trial(
+                warehouse_sizes=warehouse_sizes_snow,
+                query_nums=cold_start_queries,
+            )
+            sf_benchmark.disconnect()
+            logger.info("✅ Snowflake cold start trial completed")
+        except Exception as e:
+            logger.error(f"❌ Snowflake cold start trial failed: {e}", exc_info=True)
+            raise
+
+    if run_databricks:
+        logger.info("\n🧱 Running Databricks cold start trial...")
+        try:
+            dbx_benchmark = DatabricksBenchmark(run_id=run_id)  # SAME run_id!
+            dbx_benchmark.run_cold_start_trial(
+                warehouse_sizes=warehouse_sizes_dbx,
+                query_nums=cold_start_queries,
+            )
+            logger.info("✅ Databricks cold start trial completed")
+        except Exception as e:
+            logger.error(f"❌ Databricks cold start trial failed: {e}", exc_info=True)
+            raise
+
+    logger.info("\n" + "=" * 80)
+    logger.info(f"✅ All scenarios completed with unified Run ID: {run_id}")
     logger.info("=" * 80)
 
 
@@ -207,7 +288,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run benchmark with default medium size
+  # Run normal benchmark with default medium size
   python main.py
 
   # Run with large warehouse (xlarge for Snowflake, large for Databricks)
@@ -217,16 +298,19 @@ Examples:
   python main.py --queries 1,2,3 --warehouse-size large
   python main.py --queries 1-5 --warehouse-size medium
 
-  # Run cold start trial (queries 1, 3, 5, 10, 18 with warehouse suspended between each)
-  python main.py --cold-start
+  # Run ALL scenarios with unified run ID (normal + cold start)
+  python main.py --scenario all
+
+  # Run cold start trial only
+  python main.py --scenario coldstart
 
   # Run cold start trial with specific queries
-  python main.py --cold-start --queries 1,5,10
+  python main.py --scenario coldstart --queries 1,5,10
 
-  # Run only Databricks cold start trial (skip Snowflake)
-  python main.py --cold-start --databricks-only
+  # Run only Databricks (skip Snowflake)
+  python main.py --databricks-only
 
-  # Run only Snowflake benchmark (skip Databricks)
+  # Run only Snowflake (skip Databricks)
   python main.py --snowflake-only
         """,
     )
@@ -243,9 +327,11 @@ Examples:
         help="Warehouse size to use (automatically maps: small→small/xsmall, medium→medium/small, large→xlarge/large)",
     )
     parser.add_argument(
-        "--cold-start",
-        action="store_true",
-        help="Run cold start trial instead of normal benchmark (suspends warehouse between each query)",
+        "--scenario",
+        type=str,
+        choices=["normal", "coldstart", "all"],
+        default="normal",
+        help="Scenario to run: normal (default), coldstart, or all (runs both with same run_id)",
     )
     parser.add_argument(
         "--snowflake-only",
@@ -315,8 +401,17 @@ Examples:
         run_snowflake = not args.databricks_only
         run_databricks = not args.snowflake_only
 
-        # Run cold start trial or normal benchmark
-        if args.cold_start:
+        # Run based on scenario
+        if args.scenario == "all":
+            logger.info("Running ALL scenarios with unified run ID (normal + cold start)")
+            run_all_scenarios(
+                warehouse_sizes_snow=warehouse_sizes_snow,
+                warehouse_sizes_dbx=warehouse_sizes_dbx,
+                query_nums=query_nums,
+                run_snowflake=run_snowflake,
+                run_databricks=run_databricks,
+            )
+        elif args.scenario == "coldstart":
             logger.info("Running COLD START trial (warehouse suspended between queries)")
             run_cold_start_trial(
                 warehouse_sizes_snow=warehouse_sizes_snow,
@@ -325,7 +420,7 @@ Examples:
                 run_snowflake=run_snowflake,
                 run_databricks=run_databricks,
             )
-        else:
+        else:  # normal
             # Run benchmark (Snowflake first, then Databricks)
             run_benchmark(
                 warehouse_sizes_snow=warehouse_sizes_snow,
