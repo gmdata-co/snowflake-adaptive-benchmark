@@ -380,6 +380,51 @@ class BenchmarkStorage:
 
         self._execute_with_lock_retry("update Databricks enrichment data", _update_operation)
 
+    def get_next_run_id(self) -> str:
+        """
+        Get the next sequential run ID by reading existing data from both platforms.
+
+        This ensures that Snowflake and Databricks use synchronized run IDs.
+
+        Returns:
+            Zero-padded 3-digit run ID (e.g., "001", "002", "003")
+        """
+        def _get_next_run_id_operation(conn):
+            # Query for max run_id from both tables
+            max_ids = []
+
+            # Check snowflake_results
+            result_sf = conn.execute("""
+                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
+                FROM snowflake_results
+                WHERE run_id ~ '^[0-9]+$'
+            """).fetchone()
+            if result_sf and result_sf[0] is not None:
+                max_ids.append(result_sf[0])
+
+            # Check databricks_results
+            result_dbx = conn.execute("""
+                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
+                FROM databricks_results
+                WHERE run_id ~ '^[0-9]+$'
+            """).fetchone()
+            if result_dbx and result_dbx[0] is not None:
+                max_ids.append(result_dbx[0])
+
+            # Get next run ID
+            if max_ids:
+                max_run_id = max(max_ids)
+                next_run_id = max_run_id + 1
+                return f"{next_run_id:03d}"
+            else:
+                return "001"
+
+        try:
+            return self._execute_with_lock_retry("get next run_id", _get_next_run_id_operation)
+        except Exception as e:
+            logger.warning(f"Could not read existing run IDs: {e}. Starting from 001")
+            return "001"
+
     def query(self, sql: str) -> list:
         """
         Execute a SQL query against the database.
