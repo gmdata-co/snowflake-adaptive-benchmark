@@ -1,0 +1,10 @@
+benchmark_transformations:
+  outputs:
+    dev:
+      type: duckdb
+      # Path to the benchmark results database (relative to this file)
+      path: "../../benchmark_results.duckdb"
+      # Use main schema
+      schema: main
+      threads: 4
+  target: dev

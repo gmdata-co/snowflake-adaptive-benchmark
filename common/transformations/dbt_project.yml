@@ -1,0 +1,36 @@
+name: 'benchmark_transformations'
+version: '1.0.0'
+config-version: 2
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'benchmark_transformations'
+
+# These configurations specify where dbt should look for different types of files.
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Configuring models
+models:
+  benchmark_transformations:
+    # All models materialized as views by default
+    +materialized: view
+
+    base:
+      # Base models are simple passthroughs for documentation
+      +materialized: view
+
+    intermediate:
+      # Intermediate models for filtering and cost calculations
+      +materialized: view
+
+    marts:
+      # Final reporting views
+      +materialized: view

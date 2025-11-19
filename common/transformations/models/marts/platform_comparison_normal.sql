@@ -1,45 +1,61 @@
--- Table function to get platform comparison for a specific run_id
--- Usage: SELECT * FROM platform_comparison_by_run('run_id_value')
-CREATE OR REPLACE MACRO platform_comparison_by_run(run_id_param) AS TABLE (
+{{
+    config(
+        materialized='view'
+    )
+}}
+
+-- Platform comparison for latest NORMAL scenario run
 WITH
--- Get total warehouse cost for Databricks from the cost summary view
-databricks_total_cost AS (
-    SELECT
-        run_id,
-        SUM(total_dollars) as total_cost
-    FROM main.dbx_latest_cost
-    WHERE run_id = run_id_param
-    GROUP BY run_id
+snowflake_normal AS (
+    SELECT *
+    FROM {{ ref('int_snowflake_latest_by_scenario') }}
+    WHERE scenario = 'normal'
 ),
 
--- Get total execution time for all Databricks queries (to use as denominator)
-databricks_total_time AS (
-    SELECT
-        run_id,
-        SUM(execution_time_sec) as total_seconds
-    FROM main.dbx_latest_run
-    WHERE error_message = '' AND run_id = run_id_param
-    GROUP BY run_id
+databricks_normal AS (
+    SELECT *
+    FROM {{ ref('int_databricks_latest_by_scenario') }}
+    WHERE scenario = 'normal'
 ),
 
--- Get total warehouse cost for Snowflake from the cost summary view
+snowflake_cost AS (
+    SELECT *
+    FROM {{ ref('int_snowflake_costs') }}
+    WHERE scenario = 'normal'
+),
+
+databricks_cost AS (
+    SELECT *
+    FROM {{ ref('int_databricks_costs') }}
+    WHERE scenario = 'normal'
+),
+
+-- Get total costs
 snowflake_total_cost AS (
     SELECT
-        run_id,
         SUM(total_dollars) as total_cost
-    FROM main.snowflake_latest_cost
-    WHERE run_id = run_id_param
-    GROUP BY run_id
+    FROM snowflake_cost
 ),
 
--- Get total execution time for all Snowflake queries (to use as denominator)
+databricks_total_cost AS (
+    SELECT
+        SUM(total_dollars) as total_cost
+    FROM databricks_cost
+),
+
+-- Get total execution time (for cost allocation)
 snowflake_total_time AS (
     SELECT
-        run_id,
         SUM(execution_time_sec) as total_seconds
-    FROM main.snowflake_latest_run
-    WHERE error_message = '' AND run_id = run_id_param
-    GROUP BY run_id
+    FROM snowflake_normal
+    WHERE error_message = ''
+),
+
+databricks_total_time AS (
+    SELECT
+        SUM(execution_time_sec) as total_seconds
+    FROM databricks_normal
+    WHERE error_message = ''
 ),
 
 -- Individual query results with cost allocation
@@ -85,10 +101,9 @@ query_costs AS (
             WHEN s.error_message != '' AND d.error_message != '' THEN 'both_error'
             ELSE 'unknown'
         END AS status
-    FROM main.snowflake_latest_run s
-    FULL OUTER JOIN main.dbx_latest_run d
-        ON s.query_num = d.query_num AND s.run_id = d.run_id
-    WHERE s.run_id = run_id_param OR d.run_id = run_id_param
+    FROM snowflake_normal s
+    FULL OUTER JOIN databricks_normal d
+        ON s.query_num = d.query_num
 )
 
 -- Individual queries
@@ -108,4 +123,3 @@ SELECT
 FROM query_costs
 
 ORDER BY query_num
-);

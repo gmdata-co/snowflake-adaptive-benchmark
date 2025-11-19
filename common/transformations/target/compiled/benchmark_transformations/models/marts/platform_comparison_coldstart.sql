@@ -1,44 +1,57 @@
--- Platform comparison with dollar costs for both Snowflake and Databricks
--- Allocates warehouse costs to individual queries based on proportional execution time
-CREATE OR REPLACE VIEW platform_comparison AS
 
+
+-- Platform comparison for latest COLDSTART scenario run
 WITH
--- Get total warehouse cost for Databricks from the cost summary view
-databricks_total_cost AS (
-    SELECT
-        run_id,
-        SUM(total_dollars) as total_cost
-    FROM main.dbx_latest_cost
-    GROUP BY run_id
+snowflake_coldstart AS (
+    SELECT *
+    FROM "benchmark_results"."main"."int_snowflake_latest_by_scenario"
+    WHERE scenario = 'coldstart'
 ),
 
--- Get total execution time for all Databricks queries (to use as denominator)
-databricks_total_time AS (
-    SELECT
-        run_id,
-        SUM(execution_time_sec) as total_seconds
-    FROM main.dbx_latest_run
-    WHERE error_message = ''
-    GROUP BY run_id
+databricks_coldstart AS (
+    SELECT *
+    FROM "benchmark_results"."main"."int_databricks_latest_by_scenario"
+    WHERE scenario = 'coldstart'
 ),
 
--- Get total warehouse cost for Snowflake from the cost summary view
+snowflake_cost AS (
+    SELECT *
+    FROM "benchmark_results"."main"."int_snowflake_costs"
+    WHERE scenario = 'coldstart'
+),
+
+databricks_cost AS (
+    SELECT *
+    FROM "benchmark_results"."main"."int_databricks_costs"
+    WHERE scenario = 'coldstart'
+),
+
+-- Get total costs
 snowflake_total_cost AS (
     SELECT
-        run_id,
         SUM(total_dollars) as total_cost
-    FROM main.snowflake_latest_cost
-    GROUP BY run_id
+    FROM snowflake_cost
 ),
 
--- Get total execution time for all Snowflake queries (to use as denominator)
+databricks_total_cost AS (
+    SELECT
+        SUM(total_dollars) as total_cost
+    FROM databricks_cost
+),
+
+-- Get total execution time (for cost allocation)
 snowflake_total_time AS (
     SELECT
-        run_id,
         SUM(execution_time_sec) as total_seconds
-    FROM main.snowflake_latest_run
+    FROM snowflake_coldstart
     WHERE error_message = ''
-    GROUP BY run_id
+),
+
+databricks_total_time AS (
+    SELECT
+        SUM(execution_time_sec) as total_seconds
+    FROM databricks_coldstart
+    WHERE error_message = ''
 ),
 
 -- Individual query results with cost allocation
@@ -84,8 +97,8 @@ query_costs AS (
             WHEN s.error_message != '' AND d.error_message != '' THEN 'both_error'
             ELSE 'unknown'
         END AS status
-    FROM main.snowflake_latest_run s
-    FULL OUTER JOIN main.dbx_latest_run d
+    FROM snowflake_coldstart s
+    FULL OUTER JOIN databricks_coldstart d
         ON s.query_num = d.query_num
 )
 
@@ -105,4 +118,4 @@ SELECT
     'TOTAL' AS status
 FROM query_costs
 
-ORDER BY query_num;
+ORDER BY query_num

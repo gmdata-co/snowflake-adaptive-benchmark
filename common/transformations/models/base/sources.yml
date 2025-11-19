@@ -1,0 +1,56 @@
+version: 2
+
+sources:
+  - name: main
+    description: "Benchmark results database schema"
+    schema: main
+    tables:
+      - name: snowflake_results
+        description: "Raw Snowflake TPC-H benchmark query results"
+        columns:
+          - name: run_id
+            description: "Unique identifier for the benchmark run"
+          - name: scenario
+            description: "Benchmark scenario (normal, coldstart, concurrent)"
+          - name: query_num
+            description: "TPC-H query number (1-22)"
+          - name: execution_time_sec
+            description: "Query execution time in seconds"
+
+      - name: databricks_results
+        description: "Raw Databricks TPC-H benchmark query results"
+        columns:
+          - name: run_id
+            description: "Unique identifier for the benchmark run"
+          - name: scenario
+            description: "Benchmark scenario (normal, coldstart, concurrent)"
+          - name: query_num
+            description: "TPC-H query number (1-22)"
+          - name: execution_time_sec
+            description: "Query execution time in seconds"
+
+      - name: snowflake_wh_usage
+        description: "Snowflake warehouse usage and cost data"
+        columns:
+          - name: warehouse_name
+            description: "Name of the Snowflake warehouse"
+          - name: total_credits
+            description: "Total credits consumed"
+
+      - name: databricks_wh_usage
+        description: "Databricks warehouse usage data"
+        columns:
+          - name: warehouse_id
+            description: "ID of the Databricks SQL warehouse"
+          - name: usage_quantity
+            description: "DBUs consumed"
+
+      - name: databricks_pricing
+        description: "Databricks pricing information by SKU and cloud"
+        columns:
+          - name: sku_name
+            description: "SKU name for pricing"
+          - name: cloud
+            description: "Cloud provider (aws, azure, gcp)"
+          - name: price_per_unit
+            description: "Price per DBU"

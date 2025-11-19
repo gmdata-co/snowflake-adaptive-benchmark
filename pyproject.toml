@@ -9,6 +9,7 @@ dependencies = [
     "databricks-cli>=0.18.0",
     "databricks-sdk>=0.73.0",
     "databricks-sql-connector>=3.0.1",
+    "dbt-duckdb>=1.10.0",
     "duckdb>=1.4.1",
     "matplotlib>=3.10.7",
     "numpy<2",

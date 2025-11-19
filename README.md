@@ -29,7 +29,6 @@ This interactive script will:
 - ✓ Discover available catalogs and schemas
 - ✓ Generate your `.env` file automatically
 
-**That's it!** No manual copying of warehouse IDs needed.
 
 ---
 
@@ -153,6 +152,32 @@ This enriches all unenriched queries in DuckDB with data from `system.query.hist
 - This differs from Snowflake's exact per-query credit tracking
 - Requires SELECT permissions on `system.query.history` and `system.billing.usage`
 
+### 5. View Results
+
+After running benchmarks, view comparison reports using the dbt-generated views:
+
+```bash
+# Build/refresh all analysis views
+cd common/transformations
+./build_views.sh
+
+# Query results for normal scenario (warm warehouse)
+duckdb ../../benchmark_results.duckdb -c "SELECT * FROM platform_comparison_normal;"
+
+# Query results for coldstart scenario (suspended warehouse)
+duckdb ../../benchmark_results.duckdb -c "SELECT * FROM platform_comparison_coldstart;"
+
+# Query latest run (all scenarios)
+duckdb ../../benchmark_results.duckdb -c "SELECT * FROM platform_comparison_latest;"
+```
+
+**Available Views:**
+- `platform_comparison_normal` - Latest normal scenario (sequential queries, warm warehouse)
+- `platform_comparison_coldstart` - Latest coldstart scenario (warehouse suspended between queries)
+- `platform_comparison_latest` - Latest run with all scenarios combined
+
+See [common/transformations/README.md](common/transformations/README.md) for detailed documentation on the analysis views.
+
 ## What It Does
 
 - Executes TPC-H queries on both platforms
@@ -160,6 +185,7 @@ This enriches all unenriched queries in DuckDB with data from `system.query.hist
 - Tags queries for cost attribution
 - Compares cold vs warm query performance
 - Enriches results with detailed billing and performance data from platform system tables
+- Generates comparison views using dbt for easy analysis by scenario
 
 ## Requirements
 
@@ -170,6 +196,11 @@ This enriches all unenriched queries in DuckDB with data from `system.query.hist
 ## Project Structure
 
 - [`main.py`](main.py) - Main benchmark execution script
+- [`snowflake/`](snowflake/) - Snowflake benchmark implementation
+- [`databricks/`](databricks/) - Databricks benchmark implementation
+- [`common/`](common/) - Shared utilities and transformations
+  - [`transformations/`](common/transformations/) - dbt models for analysis views
+- [`tests/`](tests/) - Test suite for benchmark logic
 - [`project_plan.md`](project_plan.md) - Detailed implementation plan
 - [`CLAUDE.md`](CLAUDE.md) - Development guidelines
 
