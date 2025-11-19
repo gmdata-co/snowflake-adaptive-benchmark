@@ -23,7 +23,7 @@ from common.connections import SnowflakeConnection
 from common.storage import BenchmarkStorage
 # Initialize centralized logging
 from common.logging_config import get_logger
-from config import (
+from .config import (
     SNOWFLAKE_CONNECTION,
     SNOWFLAKE_ROLE,
     SNOWFLAKE_DATABASE,
@@ -216,6 +216,40 @@ class SnowflakeBenchmark:
 
         logger.info("=" * 70)
 
+    def _suspend_warehouse(self, warehouse_name: str):
+        """
+        Suspend a warehouse.
+
+        Args:
+            warehouse_name: Name of warehouse to suspend
+        """
+        logger.info(f"Suspending warehouse: {warehouse_name}")
+
+        try:
+            suspend_sql = f"ALTER WAREHOUSE {warehouse_name} SUSPEND"
+            self._execute(suspend_sql)
+            logger.info(f"✅ Suspended warehouse: {warehouse_name}")
+        except Exception as e:
+            logger.error(f"❌ Failed to suspend warehouse {warehouse_name}: {e}")
+            raise
+
+    def _resume_warehouse(self, warehouse_name: str):
+        """
+        Resume a warehouse.
+
+        Args:
+            warehouse_name: Name of warehouse to resume
+        """
+        logger.info(f"Resuming warehouse: {warehouse_name}")
+
+        try:
+            resume_sql = f"ALTER WAREHOUSE {warehouse_name} RESUME"
+            self._execute(resume_sql)
+            logger.info(f"✅ Resumed warehouse: {warehouse_name}")
+        except Exception as e:
+            logger.error(f"❌ Failed to resume warehouse {warehouse_name}: {e}")
+            raise
+
     def connect(self):
         """Establish connection to Snowflake using the configured connection."""
         # Use SnowflakeConnection abstraction
@@ -339,6 +373,9 @@ class SnowflakeBenchmark:
         # Set query tag
         self.set_query_tag(query_tag)
 
+        # Log query start
+        logger.info(f"{log_prefix} 🚀 Starting...")
+
         # Execute query and measure time
         start_time = time.time()
         timestamp = datetime.utcnow().isoformat()
@@ -355,13 +392,15 @@ class SnowflakeBenchmark:
             while self.conn.is_still_running(self.conn.get_query_status(query_id)):
                 time.sleep(0.5)
 
-            # Get results
-            result_cursor = self.conn.cursor(DictCursor)
-            result_cursor.get_results_from_sfqid(query_id)
-            # Fetch all results to get accurate row count
-            # Note: timing is already complete, so this doesn't affect metrics
-            results = result_cursor.fetchall()
-            rows_produced = len(results)
+            # Don't fetch results - just get row count from query status
+            # Fetching large result sets can cause memory issues and conversion errors
+            try:
+                query_status = self.conn.get_query_status_throw_if_error(query_id)
+                # Try to get row count from query stats (may not always be available)
+                rows_produced = cursor.rowcount if cursor.rowcount >= 0 else -1
+            except Exception:
+                # If we can't get row count, just use -1
+                rows_produced = -1
 
         except Exception as e:
             error_message = str(e)
@@ -370,8 +409,10 @@ class SnowflakeBenchmark:
         execution_time = time.time() - start_time
 
         if error_message is None:
+            # Format row count message
+            row_msg = f"({rows_produced:,} rows)" if rows_produced >= 0 else ""
             logger.info(
-                f"{log_prefix} ✅ {execution_time:.2f}s ({rows_produced:,} rows)"
+                f"{log_prefix} ✅ {execution_time:.2f}s {row_msg}".strip()
             )
             # Mark warehouse as started and track this query
             self.warehouse_started = True
@@ -478,6 +519,78 @@ class SnowflakeBenchmark:
                 "warehouse_size": warehouse_size,
                 "warehouse_name": warehouse_name,
                 "queries_completed": len(query_nums) * num_runs,
+                "success": True,
+            }
+
+        except Exception as e:
+            logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
+            return {
+                "warehouse_size": warehouse_size,
+                "warehouse_name": warehouse_name,
+                "success": False,
+                "error": str(e),
+            }
+
+    def run_cold_start_trial(
+        self,
+        warehouse_size: str,
+        query_nums: list[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run cold start trial: suspend warehouse between each query execution.
+
+        This measures true cold start performance by suspending the warehouse
+        after each query, forcing it to start from a completely cold state
+        for the next query.
+
+        Args:
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
+            query_nums: List of query numbers to run (default: [1, 3, 5, 10, 18])
+
+        Returns:
+            Dictionary with execution summary
+        """
+        if query_nums is None:
+            query_nums = [1, 3, 5, 10, 18]
+
+        warehouse_name = self._get_warehouse_name(warehouse_size)
+
+        logger.info(
+            f"\n[{warehouse_size.upper()}] Starting COLD START trial on {warehouse_name}"
+        )
+        logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_name}")
+        logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
+
+        try:
+            # Switch to this warehouse
+            self.switch_warehouse(warehouse_name)
+
+            # Execute each query with suspend/resume cycle
+            for query_num in query_nums:
+                # Resume warehouse before query
+                logger.info(f"\n[{warehouse_size.upper()}] Resuming warehouse for query {query_num}")
+                self._resume_warehouse(warehouse_name)
+
+                # Execute query once (run_num=1, always cold start)
+                self.execute_query(
+                    query_num=query_num,
+                    run_num=1,
+                    warehouse_name=warehouse_name,
+                    warehouse_size=warehouse_size.upper(),
+                )
+
+                # Suspend warehouse after query
+                logger.info(f"[{warehouse_size.upper()}] Suspending warehouse after query {query_num}")
+                self._suspend_warehouse(warehouse_name)
+
+            logger.info(
+                f"\n[{warehouse_size.upper()}] ✅ Completed COLD START trial on {warehouse_name}"
+            )
+
+            return {
+                "warehouse_size": warehouse_size,
+                "warehouse_name": warehouse_name,
+                "queries_completed": len(query_nums),
                 "success": True,
             }
 

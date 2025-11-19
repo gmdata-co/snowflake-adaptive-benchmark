@@ -29,7 +29,7 @@ from common.connections import DatabricksConnection
 from common.storage import BenchmarkStorage
 # Initialize centralized logging
 from common.logging_config import get_logger
-from config import (
+from .config import (
     DATABRICKS_HOST,
     DATABRICKS_TOKEN,
     WAREHOUSES,
@@ -248,12 +248,13 @@ class DatabricksBenchmark:
 
         logger.info("=" * 70)
 
-    def _stop_warehouse(self, warehouse_id: str):
+    def _stop_warehouse(self, warehouse_id: str, wait_for_stopped: bool = True):
         """
         Stop a warehouse using Databricks REST API.
 
         Args:
             warehouse_id: ID of the warehouse to stop
+            wait_for_stopped: If True, wait for warehouse to fully stop (default: True)
         """
         logger.info(f"Stopping warehouse: {warehouse_id}")
 
@@ -272,8 +273,9 @@ class DatabricksBenchmark:
 
             logger.info(f"✅ Stopped warehouse: {warehouse_id}")
 
-            # Wait for warehouse to fully stop (check status)
-            self._wait_for_warehouse_state(warehouse_id, "STOPPED")
+            # Wait for warehouse to fully stop (check status) - optional
+            if wait_for_stopped:
+                self._wait_for_warehouse_state(warehouse_id, "STOPPED")
 
         except Exception as e:
             logger.error(f"❌ Failed to stop warehouse {warehouse_id}: {e}")
@@ -343,12 +345,16 @@ class DatabricksBenchmark:
             timeout: Maximum time to wait in seconds
         """
         start_time = time.time()
+        last_state = None
         while time.time() - start_time < timeout:
             state = self._get_warehouse_state(warehouse_id)
             if state == target_state:
                 logger.info(f"✅ Warehouse {warehouse_id} is {target_state}")
                 return
-            logger.debug(f"Waiting for warehouse {warehouse_id} to be {target_state} (current: {state})")
+            # Log state changes at INFO level, not DEBUG
+            if state != last_state:
+                logger.info(f"Waiting for warehouse {warehouse_id} to be {target_state} (current: {state})")
+                last_state = state
             time.sleep(5)
 
         raise TimeoutError(f"Warehouse {warehouse_id} did not reach {target_state} within {timeout}s")
@@ -449,6 +455,9 @@ class DatabricksBenchmark:
         # Add query tag as SQL comment
         query_tag_json = json.dumps(query_tag)
         tagged_query = f"/* BENCHMARK: {query_tag_json} */\n{query_sql}"
+
+        # Log query start
+        logger.info(f"{log_prefix} 🚀 Starting...")
 
         # Execute query and measure time
         start_time = time.time()
@@ -594,6 +603,75 @@ class DatabricksBenchmark:
                 "warehouse_size": warehouse_size,
                 "warehouse_id": warehouse_id,
                 "queries_completed": len(query_nums) * num_runs,
+                "success": True,
+            }
+
+        except Exception as e:
+            logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
+            return {
+                "warehouse_size": warehouse_size,
+                "warehouse_id": warehouse_id,
+                "success": False,
+                "error": str(e),
+            }
+
+    def run_cold_start_trial(
+        self,
+        warehouse_size: str,
+        warehouse_id: str,
+        query_nums: list[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run cold start trial: stop warehouse between each query execution.
+
+        This measures true cold start performance by stopping the warehouse
+        after each query, forcing it to start from a completely cold state
+        for the next query.
+
+        Args:
+            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
+            warehouse_id: ID of the warehouse to use
+            query_nums: List of query numbers to run (default: [1, 3, 5, 10, 18])
+
+        Returns:
+            Dictionary with execution summary
+        """
+        if query_nums is None:
+            query_nums = [1, 3, 5, 10, 18]
+
+        logger.info(
+            f"\n[{warehouse_size.upper()}] Starting COLD START trial on warehouse {warehouse_id}"
+        )
+        logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_id}")
+        logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
+
+        try:
+            # Execute each query with stop/start cycle
+            for query_num in query_nums:
+                # Start warehouse before query
+                logger.info(f"\n[{warehouse_size.upper()}] Starting warehouse for query {query_num}")
+                self._start_warehouse(warehouse_id)
+
+                # Execute query once (run_num=1, always cold start)
+                self.execute_query(
+                    query_num=query_num,
+                    run_num=1,
+                    warehouse_id=warehouse_id,
+                    warehouse_size=warehouse_size.upper(),
+                )
+
+                # Stop warehouse after query (don't wait for it to fully stop)
+                logger.info(f"[{warehouse_size.upper()}] Stopping warehouse after query {query_num}")
+                self._stop_warehouse(warehouse_id, wait_for_stopped=False)
+
+            logger.info(
+                f"\n[{warehouse_size.upper()}] ✅ Completed COLD START trial on {warehouse_id}"
+            )
+
+            return {
+                "warehouse_size": warehouse_size,
+                "warehouse_id": warehouse_id,
+                "queries_completed": len(query_nums),
                 "success": True,
             }
 
