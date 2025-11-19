@@ -1,150 +1,192 @@
 # Databricks TPC-H Benchmark
 
-This benchmark mirrors the Snowflake benchmark structure but is adapted for Databricks SQL Warehouses.
+This module implements the Databricks side of the TPC-H performance comparison, mirroring the Snowflake benchmark structure with platform-specific adaptations.
 
-## Key Differences from Snowflake
+## Architecture
 
-### Architecture
-- **No dynamic warehouse creation**: Uses pre-configured warehouses from `config.py`
-- **Simpler connection model**: Each instance connects to one warehouse
-- **Synchronous execution**: No async query polling needed
-- **Optional stop/start**: Can stop/start warehouses for cold runs instead of creating/destroying
+The Databricks benchmark uses a modular architecture:
 
-### Cost Optimization
-Unlike Snowflake's approach of creating ephemeral warehouses, this benchmark:
-- ✅ Reuses existing warehouses (configured in `config.py`)
-- ✅ Optionally stops/starts warehouses for cold runs (~30 sec startup vs 2-5 min for new warehouse)
-- ✅ Avoids expensive warehouse creation/destruction cycles
-- ✅ Same auto-suspend settings as configured in Databricks UI
+- **`warehouse_manager.py`** - SQL Warehouse lifecycle management (create, destroy, stop/start)
+- **`query_executor.py`** - Query execution and metrics collection
+- **`benchmark.py`** - Orchestration using the managers
+- **`enrich_results.py`** - Post-execution enrichment from system tables
+
+### Dynamic Warehouse Creation
+
+Like Snowflake, Databricks warehouses are created dynamically during benchmark runs:
+
+- **Warehouse naming**: `BENCHMARK_WH_{SIZE}_{SCENARIO}_{RUN_ID}`
+  - Example: `BENCHMARK_WH_SMALL_NORMAL_001`, `BENCHMARK_WH_SMALL_COLDSTART_001`
+- **Warehouse type**: Serverless SQL Warehouses (created via `databricks.sdk.WorkspaceClient`)
+- **Lifecycle**: Created at benchmark start, destroyed at end (via try/finally blocks)
+- **Scenario isolation**: Separate warehouses for `normal` and `coldstart` scenarios prevent conflicts
 
 ### Query Execution
+
+- Queries executed using `databricks-sql-connector`
 - Query tags added as SQL comments: `/* BENCHMARK: {...} */`
-- Statement ID captured from cursor (if available)
-- Results written to `databricks_results` table in DuckDB
+- Statement ID captured from cursor for correlation with system tables
+- Results written to `databricks_results` table in DuckDB (`benchmark_results.duckdb`)
+
+### Cost Tracking
+
+Unlike Snowflake's exact per-query credit tracking, Databricks cost attribution works differently:
+
+- **Warehouse-level billing**: DBUs charged per warehouse-hour
+- **Query-level approximation**: Costs distributed proportionally across queries based on execution time
+- **Enrichment source**: `system.billing.usage` table provides warehouse usage data
+- **Calculation**: Total warehouse DBUs × (query execution time / total warehouse runtime)
+
+**Note:** This is an approximation. Databricks does not provide exact per-query DBU costs like Snowflake provides per-query credits.
 
 ## Usage
 
-### Basic Usage (Default: Small Warehouse Only)
+**Important:** The Databricks benchmark is executed via the main benchmark script (`main.py`), not directly. See the [main README](../README.md) for usage instructions.
+
+### Quick Example
+
 ```bash
-uv run databricks/benchmark.py
+# Run both Snowflake and Databricks with medium warehouse
+uv run main.py --warehouse-size medium
+
+# Run only Databricks
+uv run main.py --databricks-only --warehouse-size large
+
+# Run coldstart scenario only
+uv run main.py --databricks-only --scenario coldstart
 ```
 
-**Note:** By default, only the small warehouse is used. To test multiple sizes, use the `--warehouse` flag.
+### Warehouse Size Mapping
 
-### Test with Single Query
-```bash
-uv run databricks/benchmark.py --warehouse small --queries 1 --runs 1
-```
+The `--warehouse-size` flag maps to Databricks-specific sizes:
 
-### Sequential Execution
-```bash
-uv run databricks/benchmark.py --sequential
-```
-
-### With Cold Starts (Stop/Start Warehouses)
-```bash
-uv run databricks/benchmark.py --stop-start
-```
-**Note**: This will stop all warehouses before the benchmark and start them as needed. Adds ~30 sec per warehouse but ensures true cold cache behavior.
-
-### Multiple Warehouse Sizes
-```bash
-# Test all three warehouse sizes
-uv run databricks/benchmark.py --warehouse xsmall --warehouse small --warehouse large
-
-# Test xsmall and small only
-uv run databricks/benchmark.py --warehouse xsmall --warehouse small
-```
-
-### Specific Queries
-```bash
-uv run databricks/benchmark.py --queries "1,3,5,7"
-```
+| Generic Size | Databricks Size | Cluster Config |
+|--------------|-----------------|----------------|
+| `small` | X-Small | Serverless, 2X-Small |
+| `medium` | Small | Serverless, Small (default) |
+| `large` | Large | Serverless, Large |
 
 ## Configuration
 
-Edit `databricks/config.py` to configure:
+Set these environment variables in `.env`:
 
-```python
-WAREHOUSES = {
-    "xsmall": "f9de55834a86c9db",  # Warehouse ID
-    "small": "81c01fce5f1c223c",   # Primary baseline
-    "large": "e2ce84a538ff2ada",
-}
-
-NUM_RUNS = 1          # Runs per query (default)
-NUM_QUERIES = 22      # All TPC-H queries
-SCALE_FACTOR = 1000   # 1TB dataset
+```bash
+# Required
+DATABRICKS_HOST=https://dbc-abc123.cloud.databricks.com
+DATABRICKS_TOKEN=dapi_abc123xyz789
+DATABRICKS_CATALOG=my_benchmark_catalog
+DATABRICKS_SCHEMA=my_benchmark_schema
 ```
+
+Run `uv run setup_config.py` for interactive setup that discovers available catalogs and schemas.
 
 ## Run Types
 
-Same classification as Snowflake:
-- **cold**: First query on a warehouse (or after stop/start)
-- **semi-warm**: Warehouse running, but this specific query hasn't run yet
-- **warm**: Re-running same query on running warehouse
+Queries are classified by warehouse state:
+
+- **cold**: First query on warehouse (or after warehouse stopped/started in coldstart scenario)
+- **semi-warm**: New query on warm warehouse
+- **warm**: Repeated query on warm warehouse
 
 ## Results
 
-Results are stored in DuckDB at `benchmark_results.duckdb` in the `databricks_results` table:
+Results are stored in DuckDB at `benchmark_results.duckdb`:
 
 ```sql
--- View all results
-SELECT * FROM databricks_results;
-
--- View latest run
+-- View Databricks results from latest run
 SELECT * FROM databricks_results
 WHERE run_id = (SELECT MAX(run_id) FROM databricks_results)
 ORDER BY query_num, run_num;
 
--- Compare with Snowflake
-SELECT
-    platform,
-    warehouse_size,
-    query_num,
-    run_type,
-    AVG(execution_time_sec) as avg_time_sec
-FROM (
-    SELECT * FROM snowflake_results
-    UNION ALL
-    SELECT * FROM databricks_results
-)
-GROUP BY platform, warehouse_size, query_num, run_type
-ORDER BY query_num, warehouse_size, platform;
+-- Use dbt-generated comparison views (recommended)
+SELECT * FROM platform_comparison_normal;      -- Normal scenario
+SELECT * FROM platform_comparison_coldstart;   -- Coldstart scenario
+SELECT * FROM platform_comparison_latest;      -- Latest run (all scenarios)
 ```
+
+See [common/transformations/README.md](../common/transformations/README.md) for details on analysis views.
+
+## Enrichment
+
+After running benchmarks, enrich results with detailed metrics from Databricks system tables:
+
+```bash
+# Wait 1-2 hours after benchmark completion
+uv run databricks/enrich_results.py
+```
+
+This enriches unenriched queries with data from:
+- `system.query.history` - Compilation time, bytes scanned, server-side execution time
+- `system.billing.usage` - Warehouse DBU usage for cost approximation
+
+**Latency:** Databricks system table latency is **undocumented and variable**. Data may take hours to appear.
+
+**Permissions Required:**
+- `SELECT` on `system.query.history`
+- `SELECT` on `system.billing.usage`
+
+## Scenario Support
+
+### Normal Scenario
+- Sequential query execution on warm warehouse
+- All 22 TPC-H queries (default)
+- Warehouse remains running throughout
+- First query classified as `cold`, subsequent as `semi-warm` or `warm`
+
+### Coldstart Scenario
+- Warehouse stopped between each query
+- Default queries: 1, 3, 5, 10, 18 (override with `--queries`)
+- Each query experiences full cold start (~30-60 sec warehouse startup)
+- All queries classified as `cold`
 
 ## Troubleshooting
 
 ### DuckDB Lock Error
-If you see "Conflicting lock is held", close any applications with the DuckDB file open (like DBeaver):
+Close any applications with `benchmark_results.duckdb` open:
 ```bash
-# Check what's locking the file
-lsof benchmark_results.duckdb
+lsof benchmark_results.duckdb  # Check what's locking the file
 ```
 
 ### Connection Error
-Make sure Databricks credentials are loaded:
+Ensure Databricks credentials are loaded:
 ```bash
-source ~/.zshrc
+source ~/.zshrc  # If credentials stored in zshrc
 ```
 
-Check `.env` file has:
-```
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-DATABRICKS_TOKEN=your-token-here
-```
-
-### Missing Query Files
-Verify all 22 queries exist:
+Verify `.env` has required variables:
 ```bash
-ls databricks/queries/q*.sql | wc -l  # Should be 22
+grep DATABRICKS .env
 ```
 
-## API Usage
+### Warehouse Creation Failure
+Check that your Databricks token has permissions to:
+- Create SQL Warehouses (`CREATE SQL_WAREHOUSE`)
+- Stop/start SQL Warehouses (`USE SQL_WAREHOUSE`)
+- Query data in specified catalog/schema (`SELECT` on tables)
 
-The `--stop-start` flag uses Databricks REST API to stop/start warehouses:
-- `POST /api/2.0/sql/warehouses/{id}/stop`
-- `POST /api/2.0/sql/warehouses/{id}/start`
-- `GET /api/2.0/sql/warehouses/{id}` (for status polling)
+### Enrichment Missing Data
+If enrichment finds no data:
+1. Wait longer (system tables can be delayed by hours)
+2. Verify `statement_id` was captured during query execution
+3. Check permissions on `system.query.history` and `system.billing.usage`
+4. Confirm warehouse usage appears in Databricks billing console
 
-This provides true cold cache isolation without the cost of creating new warehouses.
+## Key Differences from Snowflake
+
+| Aspect | Snowflake | Databricks |
+|--------|-----------|------------|
+| **Warehouse Creation** | Dynamic via SQL | Dynamic via SDK (WorkspaceClient) |
+| **Cost Granularity** | Exact per-query credits | Approximated from warehouse-hour DBUs |
+| **System Table Latency** | 45 min (documented) | Hours (undocumented, variable) |
+| **Cold Start** | Suspend/resume warehouse | Stop/start warehouse |
+| **Connection** | snowflake-connector-python | databricks-sql-connector |
+| **Warehouse Naming** | Includes scenario | Includes scenario |
+
+## Module Files
+
+- **`warehouse_manager.py`** - Manages SQL Warehouse lifecycle
+- **`query_executor.py`** - Executes queries and collects metrics
+- **`benchmark.py`** - Main orchestration logic
+- **`enrich_results.py`** - Enriches results from system tables
+- **`queries/`** - TPC-H SF1000 query SQL files (q01.sql - q22.sql)
+- **`SETUP.md`** - One-time Databricks workspace setup instructions
