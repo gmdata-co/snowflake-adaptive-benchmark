@@ -54,3 +54,11 @@ sources:
             description: "Cloud provider (aws, azure, gcp)"
           - name: price_per_unit
             description: "Price per DBU"
+
+      - name: run_control
+        description: "Control table for selecting which run_ids to compare in views"
+        columns:
+          - name: run_type
+            description: "Scenario type (normal, coldstart, or latest)"
+          - name: run_id
+            description: "Run ID to use (999 = use latest run for that scenario)"

@@ -40,11 +40,11 @@ class WarehouseUsageLoader:
         """Establish connection to Databricks."""
         logger.info("Connecting to Databricks to query warehouse usage data...")
 
-        warehouse_id = WAREHOUSES.get("xsmall")
+        warehouse_id = WAREHOUSES.get("admin")
         if not warehouse_id:
-            raise ValueError("XSMALL warehouse not configured in .env file")
+            raise ValueError("Admin warehouse not configured in .env file (DATABRICKS_ADMIN_WAREHOUSE)")
 
-        logger.info(f"  Using warehouse: {warehouse_id}")
+        logger.info(f"  Using admin warehouse: {warehouse_id}")
 
         self.db_conn = DatabricksConnection(
             host=DATABRICKS_HOST,

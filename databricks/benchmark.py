@@ -252,6 +252,160 @@ class DatabricksBenchmark:
         logger.info(f"Results saved to: {DUCKDB_PATH}")
         logger.info(f"Run ID: {self.run_id}")
 
+    def run_concurrent_benchmark(
+        self,
+        warehouse_sizes: list[str] = None,
+        query_nums: list[int] = None,
+    ):
+        """
+        Run concurrent benchmark: execute all queries in parallel on the same warehouse.
+
+        This measures performance under concurrent load by executing all queries
+        simultaneously using a multi-cluster warehouse.
+
+        Args:
+            warehouse_sizes: List of warehouse sizes to test (default: ["small"])
+            query_nums: List of query numbers to run (default: all 1-22)
+        """
+        scenario = "concurrent"
+
+        if warehouse_sizes is None:
+            warehouse_sizes = ["small"]
+        if query_nums is None:
+            query_nums = list(range(1, NUM_QUERIES + 1))
+
+        logger.info("=" * 70)
+        logger.info("DATABRICKS CONCURRENT BENCHMARK")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info(f"Queries: {query_nums} ({len(query_nums)} queries)")
+        logger.info("Execution: All queries in parallel (concurrent)")
+        logger.info("Multi-cluster: max_num_clusters=4")
+        logger.info("=" * 70)
+
+        # Initialize warehouse manager
+        self.warehouse_manager = WarehouseManager(run_id=self.run_id)
+
+        # Create warehouses with multi-cluster configuration
+        warehouse_id_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario, max_num_clusters=4
+        )
+
+        try:
+            # Execute concurrent queries for each warehouse
+            for warehouse_size in warehouse_sizes:
+                warehouse_id = warehouse_id_map[warehouse_size]
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] Starting CONCURRENT benchmark on warehouse {warehouse_id}"
+                )
+                logger.info(
+                    f"[{warehouse_size.upper()}] Executing {len(query_nums)} queries in parallel"
+                )
+
+                # Create separate benchmark instances for each query
+                # Each needs its own connection for concurrent execution
+                benchmark_instances = []
+                for _ in query_nums:
+                    instance = DatabricksBenchmark(
+                        scale_factor=self.scale_factor,
+                        run_id=self.run_id,  # Share the same run_id
+                    )
+                    # Share warehouse manager
+                    instance.warehouse_manager = self.warehouse_manager
+                    benchmark_instances.append(instance)
+
+                try:
+                    # Connect all instances
+                    for instance in benchmark_instances:
+                        instance.connect(warehouse_id=warehouse_id)
+
+                    # Execute all queries concurrently using ThreadPoolExecutor
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] 🚀 Launching {len(query_nums)} concurrent queries..."
+                    )
+
+                    with ThreadPoolExecutor(max_workers=len(query_nums)) as executor:
+                        # Submit all queries for concurrent execution
+                        future_to_query = {}
+                        for idx, query_num in enumerate(query_nums):
+                            instance = benchmark_instances[idx]
+                            future = executor.submit(
+                                self._execute_single_query,
+                                instance,
+                                query_num,
+                                warehouse_id,
+                                warehouse_size,
+                                scenario,
+                            )
+                            future_to_query[future] = query_num
+
+                        # Wait for completion and collect results
+                        for future in as_completed(future_to_query):
+                            query_num = future_to_query[future]
+                            try:
+                                future.result()
+                                logger.info(
+                                    f"[{warehouse_size.upper()}] ✓ Query {query_num} completed"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"\n[{warehouse_size.upper()}] ❌ Query {query_num} failed: {e}"
+                                )
+
+                finally:
+                    # Disconnect all instances
+                    logger.info("\n🔌 Closing all connections...")
+                    for instance in benchmark_instances:
+                        instance.disconnect()
+
+                    # Add a small delay to ensure connections are fully closed
+                    time.sleep(3)
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] ✅ Completed CONCURRENT benchmark on {warehouse_id}"
+                )
+
+        finally:
+            # Always clean up warehouses
+            self.warehouse_manager.destroy_all_warehouses()
+
+        logger.info("\n" + "=" * 70)
+        logger.info("CONCURRENT BENCHMARK COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {DUCKDB_PATH}")
+        logger.info(f"Run ID: {self.run_id}")
+
+    def _execute_single_query(
+        self,
+        instance: "DatabricksBenchmark",
+        query_num: int,
+        warehouse_id: str,
+        warehouse_size: str,
+        scenario: str,
+    ):
+        """
+        Execute a single query (helper for concurrent execution).
+
+        Args:
+            instance: DatabricksBenchmark instance with its own connection
+            query_num: Query number to execute
+            warehouse_id: ID of the warehouse to use
+            warehouse_size: Warehouse size key
+            scenario: Scenario name
+        """
+        # Execute the query once (run_num=1)
+        instance.query_executor.execute_query(
+            query_num=query_num,
+            run_num=1,
+            warehouse_id=warehouse_id,
+            warehouse_size=warehouse_size.upper(),
+            scenario=scenario,
+        )
+
     def run_benchmark(
         self,
         warehouse_sizes: list[str] = None,

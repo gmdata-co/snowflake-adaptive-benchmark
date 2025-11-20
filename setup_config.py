@@ -240,11 +240,47 @@ def get_databricks_config():
             schema = input("  Enter schema name (default: benchmark): ").strip()
             schema = schema or "benchmark"
 
+        # Get admin warehouse for metadata queries (not used for benchmarking)
+        print("\n🏭 Discovering SQL warehouses for admin tasks...")
+        print("  (This warehouse will only be used for cost/metadata queries, NOT benchmarking)")
+        try:
+            warehouses = list(client.warehouses.list())
+            if warehouses:
+                print("\n  Available warehouses:")
+                warehouse_map = {}
+                for i, wh in enumerate(warehouses, 1):
+                    # Show warehouse name and size
+                    size = getattr(wh, 'warehouse_size', 'Unknown')
+                    state = getattr(wh, 'state', 'Unknown')
+                    print(f"    {i}. {wh.name} (Size: {size}, State: {state})")
+                    warehouse_map[str(i)] = wh.id
+
+                choice = (
+                    input("\n  Select admin warehouse (number, smallest recommended): ").strip()
+                    or "1"
+                )
+                admin_warehouse_id = warehouse_map.get(choice, warehouses[0].id)
+                selected_wh = next((wh for wh in warehouses if wh.id == admin_warehouse_id), warehouses[0])
+                print(f"  ✅ Selected: {selected_wh.name} (ID: {admin_warehouse_id})")
+            else:
+                print("  ⚠️  No warehouses found!")
+                admin_warehouse_id = input("  Enter warehouse ID manually: ").strip()
+                if not admin_warehouse_id:
+                    print("  ❌ Admin warehouse ID is required for metadata queries")
+                    return None
+        except Exception as e:
+            print(f"  Could not list warehouses: {e}")
+            admin_warehouse_id = input("  Enter admin warehouse ID manually: ").strip()
+            if not admin_warehouse_id:
+                print("  ❌ Admin warehouse ID is required for metadata queries")
+                return None
+
         return {
             "host": host,
             "token": token,
             "catalog": catalog,
             "schema": schema,
+            "admin_warehouse_id": admin_warehouse_id,
         }
 
     except ImportError:
@@ -277,7 +313,10 @@ export DATABRICKS_TOKEN={databricks_config['token']}
 export DATABRICKS_CATALOG={databricks_config['catalog']}
 export DATABRICKS_SCHEMA={databricks_config['schema']}
 
-# Note: SQL Warehouses are created and destroyed automatically during benchmark runs
+# Admin warehouse - used only for metadata/cost queries (enrich.py), NOT for benchmarking
+export DATABRICKS_ADMIN_WAREHOUSE={databricks_config['admin_warehouse_id']}
+
+# Note: Benchmark SQL warehouses are created and destroyed automatically during benchmark runs
 """
 
     env_path = Path(".env")
@@ -296,7 +335,8 @@ export DATABRICKS_SCHEMA={databricks_config['schema']}
     print(f"  Host: {databricks_config['host']}")
     print(f"  Catalog: {databricks_config['catalog']}")
     print(f"  Schema: {databricks_config['schema']}")
-    print("  Warehouses: Created dynamically during benchmark runs")
+    print(f"  Admin warehouse: {databricks_config['admin_warehouse_id']} (for metadata queries only)")
+    print("  Benchmark warehouses: Created dynamically during runs")
     print()
     print("You're all set! Run: uv run main.py")
 

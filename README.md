@@ -1,10 +1,42 @@
 # Snowflake vs Databricks Performance Benchmark
 
-A Python-based benchmarking tool to compare query performance and cost between Snowflake and Databricks using TPC-H SF1000 (1TB dataset).
+A Python-based benchmarking tool to compare query performance and cost between Snowflake and Databricks using the TPC-H SF1000 (1TB) dataset.
+
+## What It Does
+
+This benchmark executes all 22 TPC-H queries against both Snowflake and Databricks, measuring execution time, cost (credits/DBUs), and detailed performance metrics. Results are stored in DuckDB for analysis and comparison using dbt-generated views.
+
+### Benchmark Modes
+
+The tool supports three benchmarking scenarios:
+
+1. **Normal (Sequential)**
+   - Executes all 22 queries sequentially on a warm warehouse
+   - Warehouse remains running throughout the entire run
+   - First query experiences cold start, subsequent queries benefit from warm warehouse
+   - Default mode for comprehensive performance testing
+
+2. **Coldstart**
+   - Warehouse suspended/stopped between each query
+   - Each query experiences full cold start overhead (warehouse startup time)
+   - Tests worst-case performance when no cache is available
+   - Defaults to queries 1, 3, 5, 10, 18 (configurable)
+   - Useful for understanding cold cache performance
+
+3. **Concurrent**
+   - All 22 queries executed in parallel on the same warehouse
+   - Tests warehouse concurrency and resource contention
+   - Measures performance degradation under concurrent load
+   - Uses multi-cluster warehouses to handle parallel execution
+   - Defaults to all 22 queries (configurable)
+
+Use `--scenario normal`, `--scenario coldstart`, `--scenario concurrent`, or `--scenario all` (default) to run all three scenarios with a unified run ID.
 
 ## Getting Started
 
 ### 1. Install Dependencies
+
+If you do not have `uv` installed, run `curl -LsSf https://astral.sh/uv/install.sh | sh`. See [uv docs](https://docs.astral.sh/uv/) for details and troubleshooting.
 
 ```bash
 uv sync
@@ -94,7 +126,7 @@ export DATABRICKS_SCHEMA=my_benchmark_schema
 #### Basic Usage
 
 ```bash
-# Run all scenarios (normal + coldstart) with default settings (medium warehouse)
+# Run all scenarios (normal + coldstart + concurrent) with default settings (medium warehouse)
 uv run main.py
 ```
 
@@ -103,7 +135,7 @@ uv run main.py
 | Flag | Options | Description |
 |------|---------|-------------|
 | `--warehouse-size` | `small`, `medium`, `large` | Warehouse size to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks X-Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake X-Large / Databricks Large |
-| `--scenario` | `normal`, `coldstart`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `all`: Run both scenarios with unified run ID (default) |
+| `--scenario` | `normal`, `coldstart`, `concurrent`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `concurrent`: All queries executed in parallel on same warehouse<br>• `all`: Run all three scenarios with unified run ID (default) |
 | `--queries` | e.g., `1,2,3` or `1-5` | Specific queries to run (default: all 22 TPC-H queries) |
 | `--snowflake-only` | (flag) | Run only Snowflake benchmark (skip Databricks) |
 | `--databricks-only` | (flag) | Run only Databricks benchmark (skip Snowflake) |
@@ -111,10 +143,13 @@ uv run main.py
 #### Examples
 
 ```bash
-# Run with large warehouse (runs both scenarios by default)
+# Run all scenarios (normal + coldstart + concurrent) with default medium warehouse
+uv run main.py
+
+# Run with large warehouse (runs all three scenarios by default)
 uv run main.py --warehouse-size large
 
-# Run specific queries (both scenarios)
+# Run specific queries (all scenarios)
 uv run main.py --queries 1,2,3
 uv run main.py --queries 1-5
 
@@ -124,11 +159,17 @@ uv run main.py --scenario normal
 # Run ONLY cold start scenario (warehouse suspended between queries)
 uv run main.py --scenario coldstart
 
+# Run ONLY concurrent scenario (all queries in parallel)
+uv run main.py --scenario concurrent
+
 # Explicitly run all scenarios (same as default)
 uv run main.py --scenario all
 
 # Run cold start with specific queries
 uv run main.py --scenario coldstart --queries 1,5,10
+
+# Run concurrent with specific queries
+uv run main.py --scenario concurrent --queries 1-10
 
 # Run only Databricks
 uv run main.py --databricks-only
@@ -142,47 +183,37 @@ uv run main.py --warehouse-size large --queries 1-10 --scenario all
 
 ### 4. Enrich Results with Cost and Performance Data
 
-Both Snowflake and Databricks collect detailed cost and performance metrics in system tables, but this data is not immediately available. After running benchmarks, you can enrich all unenriched queries in the DuckDB database.
-
-#### Snowflake Enrichment
-
-Run **at least 45 minutes** after benchmark completion:
-
-```bash
-uv run snowflake/enrich_results.py
-```
-
-This enriches all unenriched queries in DuckDB with data from `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY`:
-
-- ✓ Query compilation time
-- ✓ Queue time (provisioning + repair + overload)
-- ✓ Bytes scanned
-- ✓ Cloud services credits used
-- ✓ Total elapsed time (server-side)
-
-**Note:** Snowflake's ACCOUNT_USAGE has a documented 45-minute latency.
-
-#### Databricks Enrichment
+Both Snowflake and Databricks collect detailed cost and performance metrics in system tables, but this data is not immediately available. After running benchmarks, enrich all unenriched queries in the DuckDB database.
 
 Run **at least 1-2 hours** after benchmark completion:
 
 ```bash
-uv run databricks/enrich_results.py
+uv run enrich.py
 ```
 
-This enriches all unenriched queries in DuckDB with data from `system.query.history` and `system.billing.usage`:
+This unified enrichment script runs the following in order:
+1. **Snowflake query enrichment** - Data from `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY`
+2. **Snowflake warehouse usage** - Data from `SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY`
+3. **Databricks warehouse usage** - Data from `system.billing.usage`
 
-- ✓ Query compilation time
-- ✓ Bytes read/scanned
-- ✓ Server-side execution time
-- ✓ Approximate DBU cost per query (proportionally distributed from warehouse-hour costs)
+**Snowflake enrichment adds:**
+- Query compilation time
+- Queue time (provisioning + repair + overload)
+- Bytes scanned
+- Cloud services credits used
+- Total elapsed time (server-side)
+
+**Databricks enrichment adds:**
+- Warehouse usage data for DBU cost approximation
+- Approximate DBU cost per query (proportionally distributed from warehouse-hour costs)
 
 **Important Notes:**
-
-- Databricks system table latency is **undocumented and variable** (may take hours)
-- DBU costs are **approximations** calculated by distributing warehouse-hour costs proportionally across queries based on execution time
-- This differs from Snowflake's exact per-query credit tracking
-- Requires SELECT permissions on `system.query.history` and `system.billing.usage`
+- **Timing:** Snowflake data available after 45 minutes, Databricks may take 1-2 hours
+- **Databricks costs:** DBU costs are **approximations** (proportionally distributed from warehouse-hour costs)
+- **Snowflake costs:** Exact per-query credit tracking
+- **Permissions required:**
+  - Snowflake: `SELECT` on `SNOWFLAKE.ACCOUNT_USAGE.*`
+  - Databricks: `SELECT` on `system.query.history` and `system.billing.usage`
 
 ### 5. View Results
 
@@ -194,36 +225,47 @@ After running benchmarks, view comparison reports using the dbt-generated views.
 - Raw tables: `snowflake_results`, `databricks_results`
 - Analysis views: Generated by dbt (see below)
 
+#### Build Analysis Views
+
 ```bash
 # Build/refresh all analysis views
 cd common/transformations
-./build_views.sh
+uvx dbt build
+```
 
+#### Query Results
+
+**Command-line:**
+
+```bash
 # Query results for normal scenario (warm warehouse)
-duckdb ../../benchmark_results.duckdb -c "SELECT * FROM platform_comparison_normal;"
+duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_normal;"
 
 # Query results for coldstart scenario (suspended warehouse)
-duckdb ../../benchmark_results.duckdb -c "SELECT * FROM platform_comparison_coldstart;"
+duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_coldstart;"
+
+# Query results for concurrent scenario (parallel execution)
+duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_concurrent;"
 
 # Query latest run (all scenarios)
-duckdb ../../benchmark_results.duckdb -c "SELECT * FROM platform_comparison_latest;"
+duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_latest;"
 ```
+
+**GUI Tool (Recommended):**
+
+Use [DBeaver](https://dbeaver.io/) for interactive querying and visualization:
+1. Download and install DBeaver
+2. Create a new DuckDB connection
+3. Point to `benchmark_results.duckdb` in the project root
+4. Query the views with full SQL editor and export capabilities
 
 **Available Views:**
 - `platform_comparison_normal` - Latest normal scenario (sequential queries, warm warehouse)
 - `platform_comparison_coldstart` - Latest coldstart scenario (warehouse suspended between queries)
+- `platform_comparison_concurrent` - Latest concurrent scenario (all queries in parallel)
 - `platform_comparison_latest` - Latest run with all scenarios combined
 
 See [common/transformations/README.md](common/transformations/README.md) for detailed documentation on the analysis views.
-
-## What It Does
-
-- Executes TPC-H queries on both platforms
-- Tracks execution time, cost (credits/DBUs), and performance metrics
-- Tags queries for cost attribution
-- Compares cold vs warm query performance
-- Enriches results with detailed billing and performance data from platform system tables
-- Generates comparison views using dbt for easy analysis by scenario
 
 ## Requirements
 

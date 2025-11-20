@@ -165,7 +165,18 @@ The `snowflake_results` table contains:
 
 ## Enrichment
 
-After running benchmarks, enrich results with detailed metrics from Snowflake system tables:
+After running benchmarks, enrich results with detailed metrics from system tables.
+
+**Recommended:** Use the unified enrichment script from the project root:
+
+```bash
+# Wait at least 1-2 hours after benchmark completion
+uv run enrich.py
+```
+
+This runs both Snowflake and Databricks enrichment in the correct order.
+
+**Snowflake-only enrichment** (if needed):
 
 ```bash
 # Wait at least 45 minutes after benchmark completion

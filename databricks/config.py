@@ -17,6 +17,11 @@ DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
 CATALOG = os.getenv("DATABRICKS_CATALOG")
 SCHEMA = os.getenv("DATABRICKS_SCHEMA")
 
+# Admin warehouse ID (from .env file - for querying system tables and metadata, NOT for benchmarking)
+WAREHOUSES = {
+    "admin": os.getenv("DATABRICKS_ADMIN_WAREHOUSE"),
+}
+
 # Warehouse Configuration - warehouses are created dynamically during benchmark runs
 WAREHOUSE_PREFIX = "benchmark_dbx"  # Prefix for ephemeral warehouse names
 WAREHOUSE_SIZES = ["xsmall", "small", "large"]  # Available warehouse sizes

@@ -60,13 +60,21 @@ class WarehouseManager:
         cursor.execute(sql)
         cursor.close()
 
-    def create_warehouse(self, warehouse_size: str, scenario: str) -> str:
+    def create_warehouse(
+        self,
+        warehouse_size: str,
+        scenario: str,
+        max_cluster_count: int = None,
+        min_cluster_count: int = None,
+    ) -> str:
         """
         Create a warehouse for this benchmark run.
 
         Args:
             warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
             scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
+            max_cluster_count: Maximum number of clusters for multi-cluster warehouse (optional)
+            min_cluster_count: Minimum number of clusters for multi-cluster warehouse (optional)
 
         Returns:
             Name of the created warehouse
@@ -74,7 +82,13 @@ class WarehouseManager:
         warehouse_name = self.get_warehouse_name(warehouse_size, scenario)
         size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
 
-        logger.info(f"Creating warehouse: {warehouse_name} (size: {size_upper})")
+        cluster_info = ""
+        if max_cluster_count:
+            cluster_info = f" (size: {size_upper}, max_clusters: {max_cluster_count})"
+        else:
+            cluster_info = f" (size: {size_upper})"
+
+        logger.info(f"Creating warehouse: {warehouse_name}{cluster_info}")
 
         # Need to use SYSADMIN role to create warehouse
         self._execute("USE ROLE SYSADMIN")
@@ -84,7 +98,21 @@ class WarehouseManager:
             WAREHOUSE_SIZE = '{size_upper}'
             AUTO_SUSPEND = {WAREHOUSE_AUTO_SUSPEND}
             AUTO_RESUME = {str(WAREHOUSE_AUTO_RESUME).upper()}
-            INITIALLY_SUSPENDED = {str(WAREHOUSE_INITIALLY_SUSPENDED).upper()}
+            INITIALLY_SUSPENDED = {str(WAREHOUSE_INITIALLY_SUSPENDED).upper()}"""
+
+        # Add multi-cluster configuration if specified
+        if max_cluster_count is not None:
+            create_sql += f"""
+            MAX_CLUSTER_COUNT = {max_cluster_count}"""
+        if min_cluster_count is not None:
+            create_sql += f"""
+            MIN_CLUSTER_COUNT = {min_cluster_count}"""
+        if max_cluster_count is not None:
+            # Use STANDARD scaling policy for concurrent benchmarks
+            create_sql += """
+            SCALING_POLICY = 'STANDARD'"""
+
+        create_sql += f"""
             COMMENT = 'Ephemeral warehouse for benchmark run {self.run_id} scenario {scenario}'"""
 
         self._execute(create_sql)
@@ -118,7 +146,11 @@ class WarehouseManager:
             logger.error(f"❌ Failed to destroy warehouse {warehouse_name}: {e}")
 
     def create_all_warehouses(
-        self, warehouse_sizes: List[str], scenario: str
+        self,
+        warehouse_sizes: List[str],
+        scenario: str,
+        max_cluster_count: int = None,
+        min_cluster_count: int = None,
     ) -> Dict[str, str]:
         """
         Create all warehouses needed for this benchmark run.
@@ -126,6 +158,8 @@ class WarehouseManager:
         Args:
             warehouse_sizes: List of warehouse size keys to create
             scenario: Scenario name for warehouse naming
+            max_cluster_count: Maximum number of clusters for multi-cluster warehouse (optional)
+            min_cluster_count: Minimum number of clusters for multi-cluster warehouse (optional)
 
         Returns:
             Dictionary mapping warehouse size to warehouse name
@@ -136,7 +170,9 @@ class WarehouseManager:
 
         warehouse_map = {}
         for warehouse_size in warehouse_sizes:
-            warehouse_name = self.create_warehouse(warehouse_size, scenario)
+            warehouse_name = self.create_warehouse(
+                warehouse_size, scenario, max_cluster_count, min_cluster_count
+            )
             warehouse_map[warehouse_size] = warehouse_name
 
         logger.info("=" * 70)

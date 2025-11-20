@@ -246,6 +246,159 @@ class SnowflakeBenchmark:
         logger.info(f"Results saved to: {DUCKDB_PATH}")
         logger.info(f"Run ID: {self.run_id}")
 
+    def run_concurrent_benchmark(
+        self,
+        warehouse_sizes: list[str] = None,
+        query_nums: list[int] = None,
+    ):
+        """
+        Run concurrent benchmark: execute all queries in parallel on the same warehouse.
+
+        This measures performance under concurrent load by executing all queries
+        simultaneously using a multi-cluster warehouse.
+
+        Args:
+            warehouse_sizes: List of warehouse sizes to test (default: ["medium"])
+            query_nums: List of query numbers to run (default: all 1-22)
+        """
+        scenario = "concurrent"
+
+        if warehouse_sizes is None:
+            warehouse_sizes = ["medium"]
+        if query_nums is None:
+            query_nums = list(range(1, NUM_QUERIES + 1))
+
+        logger.info("=" * 70)
+        logger.info("SNOWFLAKE CONCURRENT BENCHMARK")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info(f"Queries: {query_nums} ({len(query_nums)} queries)")
+        logger.info("Execution: All queries in parallel (concurrent)")
+        logger.info("Warehouse: Single-cluster (multi-cluster requires Enterprise Edition)")
+        logger.info("=" * 70)
+
+        # Create warehouses (single-cluster for concurrent testing)
+        warehouse_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario
+        )
+
+        try:
+            # Execute concurrent queries for each warehouse
+            for warehouse_size in warehouse_sizes:
+                warehouse_name = warehouse_map[warehouse_size]
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] Starting CONCURRENT benchmark on {warehouse_name}"
+                )
+                logger.info(
+                    f"[{warehouse_size.upper()}] Executing {len(query_nums)} queries in parallel"
+                )
+
+                # Create separate benchmark instances for each query
+                # Each needs its own connection for concurrent execution
+                benchmark_instances = []
+                for _ in query_nums:
+                    instance = SnowflakeBenchmark(
+                        connection_name=self.connection_name,
+                        scale_factor=self.scale_factor,
+                        run_id=self.run_id,  # Share the same run_id
+                    )
+                    benchmark_instances.append(instance)
+
+                try:
+                    # Connect all instances
+                    for instance in benchmark_instances:
+                        instance.connect()
+                        # Share the created warehouses list
+                        instance.warehouse_manager.created_warehouses = (
+                            self.warehouse_manager.created_warehouses
+                        )
+
+                    # Execute all queries concurrently using ThreadPoolExecutor
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] 🚀 Launching {len(query_nums)} concurrent queries..."
+                    )
+
+                    with ThreadPoolExecutor(max_workers=len(query_nums)) as executor:
+                        # Submit all queries for concurrent execution
+                        future_to_query = {}
+                        for idx, query_num in enumerate(query_nums):
+                            instance = benchmark_instances[idx]
+                            future = executor.submit(
+                                self._execute_single_query,
+                                instance,
+                                query_num,
+                                warehouse_name,
+                                warehouse_size,
+                                scenario,
+                            )
+                            future_to_query[future] = query_num
+
+                        # Wait for completion and collect results
+                        for future in as_completed(future_to_query):
+                            query_num = future_to_query[future]
+                            try:
+                                future.result()
+                                logger.info(
+                                    f"[{warehouse_size.upper()}] ✓ Query {query_num} completed"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"\n[{warehouse_size.upper()}] ❌ Query {query_num} failed: {e}"
+                                )
+
+                finally:
+                    # Disconnect all instances
+                    for instance in benchmark_instances:
+                        instance.disconnect()
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] ✅ Completed CONCURRENT benchmark on {warehouse_name}"
+                )
+
+        finally:
+            # Always clean up warehouses
+            self.warehouse_manager.destroy_all_warehouses()
+
+        logger.info("\n" + "=" * 70)
+        logger.info("CONCURRENT BENCHMARK COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {DUCKDB_PATH}")
+        logger.info(f"Run ID: {self.run_id}")
+
+    def _execute_single_query(
+        self,
+        instance: "SnowflakeBenchmark",
+        query_num: int,
+        warehouse_name: str,
+        warehouse_size: str,
+        scenario: str,
+    ):
+        """
+        Execute a single query (helper for concurrent execution).
+
+        Args:
+            instance: SnowflakeBenchmark instance with its own connection
+            query_num: Query number to execute
+            warehouse_name: Name of the warehouse to use
+            warehouse_size: Warehouse size key
+            scenario: Scenario name
+        """
+        # Switch to the warehouse
+        instance.warehouse_manager.switch_warehouse(warehouse_name)
+
+        # Execute the query once (run_num=1)
+        instance.query_executor.execute_query(
+            query_num=query_num,
+            run_num=1,
+            warehouse_name=warehouse_name,
+            warehouse_size=warehouse_size.upper(),
+            scenario=scenario,
+        )
+
     def run_benchmark(
         self,
         warehouse_sizes: list[str] = None,

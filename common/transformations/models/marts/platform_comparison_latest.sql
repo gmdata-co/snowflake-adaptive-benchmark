@@ -5,8 +5,16 @@
 }}
 
 -- Platform comparison for latest run_id (all scenarios combined)
+-- Controlled by run_control table: when run_id = 999, use latest. Otherwise use specified run_id.
 WITH
-latest_run AS (
+control AS (
+    SELECT run_id
+    FROM {{ source('main', 'run_control') }}
+    WHERE run_type = 'latest'
+),
+
+-- Find overall latest run_id (used when control.run_id = 999)
+latest_run_from_timestamp AS (
     SELECT
         run_id,
         MAX(timestamp) AS latest_timestamp
@@ -14,6 +22,17 @@ latest_run AS (
     GROUP BY run_id
     ORDER BY latest_timestamp DESC
     LIMIT 1
+),
+
+-- Resolve which run_id to use
+latest_run AS (
+    SELECT
+        CASE
+            WHEN c.run_id = 999 THEN CAST(l.run_id AS INTEGER)
+            ELSE c.run_id
+        END as run_id
+    FROM control c
+    CROSS JOIN latest_run_from_timestamp l
 ),
 
 snowflake_latest AS (

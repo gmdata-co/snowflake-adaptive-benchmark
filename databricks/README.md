@@ -108,16 +108,22 @@ See [common/transformations/README.md](../common/transformations/README.md) for 
 
 ## Enrichment
 
-After running benchmarks, enrich results with detailed metrics from Databricks system tables:
+After running benchmarks, enrich results with detailed metrics from system tables.
+
+**Use the unified enrichment script** from the project root:
 
 ```bash
-# Wait 1-2 hours after benchmark completion
-uv run databricks/enrich_results.py
+# Wait at least 1-2 hours after benchmark completion
+uv run enrich.py
 ```
 
-This enriches unenriched queries with data from:
-- `system.query.history` - Compilation time, bytes scanned, server-side execution time
-- `system.billing.usage` - Warehouse DBU usage for cost approximation
+This runs both Snowflake and Databricks enrichment in the correct order.
+
+**Note:** The standalone `databricks/enrich_results.py` script has known issues and should not be run directly. Use the unified `enrich.py` script instead.
+
+**What gets enriched:**
+- Warehouse usage data from `system.billing.usage`
+- Approximate DBU cost per query (proportionally distributed from warehouse-hour costs)
 
 **Latency:** Databricks system table latency is **undocumented and variable**. Data may take hours to appear.
 

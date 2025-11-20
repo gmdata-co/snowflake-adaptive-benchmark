@@ -65,13 +65,16 @@ class WarehouseManager:
         scenario_lower = scenario.lower()
         return f"{WAREHOUSE_PREFIX}_{warehouse_size}_{scenario_lower}_{self.run_id}"
 
-    def create_warehouse(self, warehouse_size: str, scenario: str) -> str:
+    def create_warehouse(
+        self, warehouse_size: str, scenario: str, max_num_clusters: int = None
+    ) -> str:
         """
         Create a Serverless SQL warehouse for this benchmark run.
 
         Args:
             warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
             scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
+            max_num_clusters: Maximum number of clusters for multi-cluster warehouse (optional)
 
         Returns:
             ID of the created warehouse
@@ -79,7 +82,13 @@ class WarehouseManager:
         warehouse_name = self.get_warehouse_name(warehouse_size, scenario)
         cluster_size = WAREHOUSE_SIZE_MAP[warehouse_size]
 
-        logger.info(f"Creating warehouse: {warehouse_name} (size: {cluster_size})")
+        # Use provided max_num_clusters or fall back to config default
+        max_clusters = (
+            max_num_clusters if max_num_clusters is not None else WAREHOUSE_MAX_NUM_CLUSTERS
+        )
+
+        cluster_info = f" (size: {cluster_size}, max_clusters: {max_clusters})"
+        logger.info(f"Creating warehouse: {warehouse_name}{cluster_info}")
 
         self._ensure_workspace_client()
 
@@ -89,7 +98,7 @@ class WarehouseManager:
             cluster_size=cluster_size,
             warehouse_type=CreateWarehouseRequestWarehouseType.PRO,
             enable_serverless_compute=True,
-            max_num_clusters=WAREHOUSE_MAX_NUM_CLUSTERS,
+            max_num_clusters=max_clusters,
             auto_stop_mins=WAREHOUSE_AUTO_STOP_MINS,
             spot_instance_policy=SpotInstancePolicy.COST_OPTIMIZED,
         )
@@ -127,7 +136,7 @@ class WarehouseManager:
             logger.error(f"❌ Failed to destroy warehouse {warehouse_name}: {e}")
 
     def create_all_warehouses(
-        self, warehouse_sizes: List[str], scenario: str
+        self, warehouse_sizes: List[str], scenario: str, max_num_clusters: int = None
     ) -> Dict[str, str]:
         """
         Create all warehouses needed for this benchmark run.
@@ -135,6 +144,7 @@ class WarehouseManager:
         Args:
             warehouse_sizes: List of warehouse size keys to create
             scenario: Scenario name for warehouse naming
+            max_num_clusters: Maximum number of clusters for multi-cluster warehouse (optional)
 
         Returns:
             Dictionary mapping warehouse size to warehouse ID
@@ -145,7 +155,7 @@ class WarehouseManager:
 
         warehouse_id_map = {}
         for warehouse_size in warehouse_sizes:
-            warehouse_id = self.create_warehouse(warehouse_size, scenario)
+            warehouse_id = self.create_warehouse(warehouse_size, scenario, max_num_clusters)
             warehouse_id_map[warehouse_size] = warehouse_id
 
         logger.info("=" * 70)

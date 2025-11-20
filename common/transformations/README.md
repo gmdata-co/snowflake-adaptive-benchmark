@@ -12,10 +12,7 @@ The transformation layer uses **dbt-duckdb** to create organized, tested views f
 
 ```bash
 # From the transformations directory
-./build_views.sh
-
-# Or manually
-uv run dbt build --profiles-dir .
+uvx dbt build
 ```
 
 ### Query the Views
@@ -68,7 +65,6 @@ All comparison views include:
 transformations/
 ├── dbt_project.yml          # dbt project configuration
 ├── profiles.yml             # DuckDB connection config
-├── build_views.sh           # Convenience script to build views
 ├── models/
 │   ├── base/                # Source table references
 │   │   ├── base_snowflake_results.sql
