@@ -84,7 +84,7 @@ function App() {
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '12px 16px 8px' }}>
         {/* Header */}
         <header style={{ textAlign: 'center', marginBottom: '10px' }}>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '2px', background: 'linear-gradient(to right, #29B5E8, #FF3621)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '2px', backgroundImage: 'linear-gradient(to right, #00D4FF 0%, #00D4FF 35%, #FF3621 65%, #FF3621 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent' }}>
             Snowflake vs Databricks
           </h1>
           <p style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
