@@ -44,10 +44,10 @@ class DatabricksResultsEnricher:
         """Establish connection to Databricks for querying system tables."""
         logger.info("Connecting to Databricks to query system tables...")
 
-        # Use XSMALL warehouse to query system tables (system tables are accessible from any warehouse)
-        warehouse_id = WAREHOUSES.get("xsmall")
+        # Use admin warehouse to query system tables (system tables are accessible from any warehouse)
+        warehouse_id = WAREHOUSES.get("admin")
         if not warehouse_id:
-            raise ValueError("XSMALL warehouse not configured in .env file")
+            raise ValueError("Admin warehouse not configured in .env file (DATABRICKS_ADMIN_WAREHOUSE)")
 
         logger.info(f"  Using warehouse: {warehouse_id}")
         logger.info(f"  Host: {DATABRICKS_HOST}")

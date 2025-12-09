@@ -35,13 +35,13 @@ class TestSnowflakeWarehouseManager:
 
     def test_warehouse_naming_normal_scenario(self, warehouse_manager):
         """Test warehouse name includes scenario: normal"""
-        name = warehouse_manager.get_warehouse_name("medium", "normal")
-        assert name == "BENCHMARK_WH_MEDIUM_NORMAL_001"
+        name = warehouse_manager.get_warehouse_name("large", "normal")
+        assert name == "BENCHMARK_WH_LARGE_NORMAL_001"
 
     def test_warehouse_naming_coldstart_scenario(self, warehouse_manager):
         """Test warehouse name includes scenario: coldstart"""
-        name = warehouse_manager.get_warehouse_name("medium", "coldstart")
-        assert name == "BENCHMARK_WH_MEDIUM_COLDSTART_001"
+        name = warehouse_manager.get_warehouse_name("large", "coldstart")
+        assert name == "BENCHMARK_WH_LARGE_COLDSTART_001"
 
     def test_warehouse_naming_concurrent_scenario(self, warehouse_manager):
         """Test warehouse name includes scenario: concurrent"""
@@ -50,8 +50,8 @@ class TestSnowflakeWarehouseManager:
 
     def test_warehouse_naming_different_sizes(self, warehouse_manager):
         """Test warehouse naming with different sizes"""
-        assert warehouse_manager.get_warehouse_name("small", "normal") == "BENCHMARK_WH_SMALL_NORMAL_001"
         assert warehouse_manager.get_warehouse_name("medium", "normal") == "BENCHMARK_WH_MEDIUM_NORMAL_001"
+        assert warehouse_manager.get_warehouse_name("large", "normal") == "BENCHMARK_WH_LARGE_NORMAL_001"
         assert warehouse_manager.get_warehouse_name("xlarge", "normal") == "BENCHMARK_WH_XLARGE_NORMAL_001"
 
     def test_warehouse_naming_different_run_ids(self, mock_connection):
@@ -60,23 +60,23 @@ class TestSnowflakeWarehouseManager:
         wm2 = SnowflakeWarehouseManager(connection=mock_connection, run_id="002")
         wm3 = SnowflakeWarehouseManager(connection=mock_connection, run_id="123")
 
-        assert wm1.get_warehouse_name("medium", "normal") == "BENCHMARK_WH_MEDIUM_NORMAL_001"
-        assert wm2.get_warehouse_name("medium", "normal") == "BENCHMARK_WH_MEDIUM_NORMAL_002"
-        assert wm3.get_warehouse_name("medium", "normal") == "BENCHMARK_WH_MEDIUM_NORMAL_123"
+        assert wm1.get_warehouse_name("large", "normal") == "BENCHMARK_WH_LARGE_NORMAL_001"
+        assert wm2.get_warehouse_name("large", "normal") == "BENCHMARK_WH_LARGE_NORMAL_002"
+        assert wm3.get_warehouse_name("large", "normal") == "BENCHMARK_WH_LARGE_NORMAL_123"
 
     def test_create_warehouse_tracks_for_cleanup(self, warehouse_manager, mock_connection):
         """Test that created warehouses are tracked for cleanup"""
-        warehouse_name = warehouse_manager.create_warehouse("medium", "normal")
+        warehouse_name = warehouse_manager.create_warehouse("large", "normal")
         assert warehouse_name in warehouse_manager.created_warehouses
 
     def test_create_all_warehouses_returns_map(self, warehouse_manager):
         """Test create_all_warehouses returns size -> name mapping"""
-        sizes = ["small", "medium", "xlarge"]
+        sizes = ["medium", "large", "xlarge"]
         warehouse_map = warehouse_manager.create_all_warehouses(sizes, "normal")
 
         assert len(warehouse_map) == 3
-        assert warehouse_map["small"] == "BENCHMARK_WH_SMALL_NORMAL_001"
         assert warehouse_map["medium"] == "BENCHMARK_WH_MEDIUM_NORMAL_001"
+        assert warehouse_map["large"] == "BENCHMARK_WH_LARGE_NORMAL_001"
         assert warehouse_map["xlarge"] == "BENCHMARK_WH_XLARGE_NORMAL_001"
 
 
@@ -91,13 +91,13 @@ class TestDatabricksWarehouseManager:
 
     def test_warehouse_naming_normal_scenario(self, warehouse_manager):
         """Test warehouse name includes scenario: normal"""
-        name = warehouse_manager.get_warehouse_name("small", "normal")
-        assert name == "benchmark_dbx_small_normal_001"
+        name = warehouse_manager.get_warehouse_name("medium", "normal")
+        assert name == "benchmark_dbx_medium_normal_001"
 
     def test_warehouse_naming_coldstart_scenario(self, warehouse_manager):
         """Test warehouse name includes scenario: coldstart"""
-        name = warehouse_manager.get_warehouse_name("small", "coldstart")
-        assert name == "benchmark_dbx_small_coldstart_001"
+        name = warehouse_manager.get_warehouse_name("medium", "coldstart")
+        assert name == "benchmark_dbx_medium_coldstart_001"
 
     def test_warehouse_naming_concurrent_scenario(self, warehouse_manager):
         """Test warehouse name includes scenario: concurrent"""
@@ -106,8 +106,8 @@ class TestDatabricksWarehouseManager:
 
     def test_warehouse_naming_different_sizes(self, warehouse_manager):
         """Test warehouse naming with different sizes"""
-        assert warehouse_manager.get_warehouse_name("xsmall", "normal") == "benchmark_dbx_xsmall_normal_001"
         assert warehouse_manager.get_warehouse_name("small", "normal") == "benchmark_dbx_small_normal_001"
+        assert warehouse_manager.get_warehouse_name("medium", "normal") == "benchmark_dbx_medium_normal_001"
         assert warehouse_manager.get_warehouse_name("large", "normal") == "benchmark_dbx_large_normal_001"
 
     def test_warehouse_naming_different_run_ids(self):
@@ -117,9 +117,9 @@ class TestDatabricksWarehouseManager:
             wm2 = DatabricksWarehouseManager(run_id="002")
             wm3 = DatabricksWarehouseManager(run_id="456")
 
-            assert wm1.get_warehouse_name("small", "normal") == "benchmark_dbx_small_normal_001"
-            assert wm2.get_warehouse_name("small", "normal") == "benchmark_dbx_small_normal_002"
-            assert wm3.get_warehouse_name("small", "normal") == "benchmark_dbx_small_normal_456"
+            assert wm1.get_warehouse_name("medium", "normal") == "benchmark_dbx_medium_normal_001"
+            assert wm2.get_warehouse_name("medium", "normal") == "benchmark_dbx_medium_normal_002"
+            assert wm3.get_warehouse_name("medium", "normal") == "benchmark_dbx_medium_normal_456"
 
     def test_create_warehouse_tracks_for_cleanup(self, warehouse_manager):
         """Test that created warehouses are tracked for cleanup"""
@@ -128,12 +128,12 @@ class TestDatabricksWarehouseManager:
         mock_warehouse.id = "test-warehouse-id"
         warehouse_manager.workspace_client.warehouses.create.return_value = mock_warehouse
 
-        warehouse_manager.create_warehouse("small", "normal")
+        warehouse_manager.create_warehouse("medium", "normal")
 
         assert len(warehouse_manager.created_warehouses) == 1
         assert warehouse_manager.created_warehouses[0]["id"] == "test-warehouse-id"
-        assert warehouse_manager.created_warehouses[0]["size"] == "small"
-        assert warehouse_manager.created_warehouses[0]["name"] == "benchmark_dbx_small_normal_001"
+        assert warehouse_manager.created_warehouses[0]["size"] == "medium"
+        assert warehouse_manager.created_warehouses[0]["name"] == "benchmark_dbx_medium_normal_001"
 
 
 if __name__ == "__main__":

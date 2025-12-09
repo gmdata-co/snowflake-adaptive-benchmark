@@ -1,0 +1,167 @@
+{
+  "comparisons": [
+    {
+      "id": "normal-1",
+      "scenario": "normal",
+      "scenarioLabel": "23 Sequential Queries",
+      "warehouseTier": 1,
+      "snowflake": {
+        "size": "MEDIUM",
+        "label": "Snowflake Medium",
+        "time": 604.68,
+        "cost": 4.02
+      },
+      "databricks": {
+        "size": "SMALL",
+        "label": "Databricks Small",
+        "time": 862.52,
+        "cost": 2.03
+      }
+    },
+    {
+      "id": "normal-2",
+      "scenario": "normal",
+      "scenarioLabel": "23 Sequential Queries",
+      "warehouseTier": 2,
+      "snowflake": {
+        "size": "LARGE",
+        "label": "Snowflake Large",
+        "time": 308.81,
+        "cost": 2.06
+      },
+      "databricks": {
+        "size": "MEDIUM",
+        "label": "Databricks Medium",
+        "time": 485.96,
+        "cost": 2.29
+      }
+    },
+    {
+      "id": "normal-3",
+      "scenario": "normal",
+      "scenarioLabel": "23 Sequential Queries",
+      "warehouseTier": 3,
+      "snowflake": {
+        "size": "XLARGE",
+        "label": "Snowflake Xlarge",
+        "time": 184.03,
+        "cost": 2.46
+      },
+      "databricks": {
+        "size": "LARGE",
+        "label": "Databricks Large",
+        "time": 319.65,
+        "cost": 2.52
+      }
+    },
+    {
+      "id": "coldstart-1",
+      "scenario": "coldstart",
+      "scenarioLabel": "5 Cold Start Queries",
+      "warehouseTier": 1,
+      "snowflake": {
+        "size": "MEDIUM",
+        "label": "Snowflake Medium",
+        "time": 255.79,
+        "cost": 1.13
+      },
+      "databricks": {
+        "size": "SMALL",
+        "label": "Databricks Small",
+        "time": 424.72,
+        "cost": 0.94
+      }
+    },
+    {
+      "id": "coldstart-2",
+      "scenario": "coldstart",
+      "scenarioLabel": "5 Cold Start Queries",
+      "warehouseTier": 2,
+      "snowflake": {
+        "size": "LARGE",
+        "label": "Snowflake Large",
+        "time": 127.88,
+        "cost": 2.0
+      },
+      "databricks": {
+        "size": "MEDIUM",
+        "label": "Databricks Medium",
+        "time": 324.31,
+        "cost": 1.4
+      }
+    },
+    {
+      "id": "coldstart-3",
+      "scenario": "coldstart",
+      "scenarioLabel": "5 Cold Start Queries",
+      "warehouseTier": 3,
+      "snowflake": {
+        "size": "XLARGE",
+        "label": "Snowflake Xlarge",
+        "time": 75.47,
+        "cost": 2.4
+      },
+      "databricks": {
+        "size": "LARGE",
+        "label": "Databricks Large",
+        "time": 256.77,
+        "cost": 1.81
+      }
+    },
+    {
+      "id": "concurrent-1",
+      "scenario": "concurrent",
+      "scenarioLabel": "23 Concurrent Queries",
+      "warehouseTier": 1,
+      "snowflake": {
+        "size": "MEDIUM",
+        "label": "Snowflake Medium",
+        "time": 278.67,
+        "cost": 3.0
+      },
+      "databricks": {
+        "size": "SMALL",
+        "label": "Databricks Small",
+        "time": 369.49,
+        "cost": 2.34
+      }
+    },
+    {
+      "id": "concurrent-2",
+      "scenario": "concurrent",
+      "scenarioLabel": "23 Concurrent Queries",
+      "warehouseTier": 2,
+      "snowflake": {
+        "size": "LARGE",
+        "label": "Snowflake Large",
+        "time": 142.78,
+        "cost": 2.63
+      },
+      "databricks": {
+        "size": "MEDIUM",
+        "label": "Databricks Medium",
+        "time": 295.96,
+        "cost": 3.65
+      }
+    },
+    {
+      "id": "concurrent-3",
+      "scenario": "concurrent",
+      "scenarioLabel": "23 Concurrent Queries",
+      "warehouseTier": 3,
+      "snowflake": {
+        "size": "XLARGE",
+        "label": "Snowflake Xlarge",
+        "time": 99.7,
+        "cost": 2.79
+      },
+      "databricks": {
+        "size": "LARGE",
+        "label": "Databricks Large",
+        "time": 176.47,
+        "cost": 3.24
+      }
+    }
+  ],
+  "exportedAt": "2025-12-04T16:14:01.038667"
+}

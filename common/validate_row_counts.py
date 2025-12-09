@@ -170,7 +170,7 @@ def get_databricks_counts() -> dict[str, int | None]:
         from databricks.warehouse_manager import WarehouseManager
 
         warehouse_manager = WarehouseManager(run_id="validation")
-        warehouse_id = warehouse_manager.create_warehouse("xsmall", "validation")
+        warehouse_id = warehouse_manager.create_warehouse("small", "validation")
         logger.info(f"Created temporary warehouse for validation: {warehouse_id}")
 
         connection = DatabricksConnection(
@@ -205,7 +205,7 @@ def get_databricks_counts() -> dict[str, int | None]:
 
         # Clean up temporary warehouse
         if warehouse_manager and warehouse_id:
-            warehouse_name = warehouse_manager.get_warehouse_name("xsmall", "validation")
+            warehouse_name = warehouse_manager.get_warehouse_name("small", "validation")
             warehouse_manager.destroy_warehouse(warehouse_id, warehouse_name)
             logger.info("Cleaned up temporary validation warehouse")
 

@@ -24,17 +24,17 @@ WAREHOUSES = {
 
 # Warehouse Configuration - warehouses are created dynamically during benchmark runs
 WAREHOUSE_PREFIX = "benchmark_dbx"  # Prefix for ephemeral warehouse names
-WAREHOUSE_SIZES = ["xsmall", "small", "large"]  # Available warehouse sizes
+WAREHOUSE_SIZES = ["small", "medium", "large"]  # Available warehouse sizes
 
 # Map benchmark size keys to Databricks cluster size strings
 WAREHOUSE_SIZE_MAP = {
-    "xsmall": "2X-Small",
     "small": "Small",
+    "medium": "Medium",
     "large": "Large",
 }
 
 # Warehouse auto-suspend configuration
-WAREHOUSE_AUTO_STOP_MINS = 10  # Minimum allowed by Databricks (safety net; warehouses are deleted after run)
+WAREHOUSE_AUTO_STOP_MINS = 1  # Minimum allowed by Databricks (safety net; warehouses are deleted after run)
 WAREHOUSE_MAX_NUM_CLUSTERS = 1  # For serverless warehouses
 
 # Test parameters (matching Snowflake)
@@ -70,7 +70,7 @@ CSV_COLUMNS = [
     "platform",  # "databricks"
     "scenario",  # "primary" (or "concurrency" in future)
     "warehouse_name",  # Warehouse ID
-    "warehouse_size",  # "XSMALL", "SMALL", or "LARGE"
+    "warehouse_size",  # "SMALL", "MEDIUM", or "LARGE"
     "query_num",  # 1-22 (TPC-H query number)
     "run_num",  # 1-4 (iteration number)
     "run_type",  # "cold", "semi-warm", or "warm"

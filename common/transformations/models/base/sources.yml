@@ -62,3 +62,23 @@ sources:
             description: "Scenario type (normal, coldstart, or latest)"
           - name: run_id
             description: "Run ID to use (999 = use latest run for that scenario)"
+
+      - name: run_metadata
+        description: "Metadata about benchmark runs including timing per warehouse"
+        columns:
+          - name: run_id
+            description: "Unique identifier for the benchmark run"
+          - name: platform
+            description: "Platform (snowflake or databricks)"
+          - name: scenario
+            description: "Benchmark scenario"
+          - name: warehouse_size
+            description: "Warehouse size (e.g., SMALL, MEDIUM, XLARGE for Snowflake; XSMALL, SMALL, LARGE for Databricks)"
+          - name: warehouse_name
+            description: "Full warehouse name/ID"
+          - name: start_timestamp
+            description: "When the run started"
+          - name: end_timestamp
+            description: "When the run ended"
+          - name: total_wall_clock_seconds
+            description: "Total wall clock time for the run"

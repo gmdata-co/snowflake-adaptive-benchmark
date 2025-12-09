@@ -9,10 +9,6 @@ import time
 import requests
 from typing import List, Dict
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.sql import (
-    CreateWarehouseRequestWarehouseType,
-    SpotInstancePolicy,
-)
 from common.logging_config import get_logger
 from .config import (
     DATABRICKS_HOST,
@@ -56,7 +52,7 @@ class WarehouseManager:
         Generate warehouse name with scenario and run_id suffix.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "large")
             scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
 
         Returns:
@@ -72,7 +68,7 @@ class WarehouseManager:
         Create a Serverless SQL warehouse for this benchmark run.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "large")
             scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
             max_num_clusters: Maximum number of clusters for multi-cluster warehouse (optional)
 
@@ -96,11 +92,9 @@ class WarehouseManager:
         warehouse = self.workspace_client.warehouses.create(
             name=warehouse_name,
             cluster_size=cluster_size,
-            warehouse_type=CreateWarehouseRequestWarehouseType.PRO,
             enable_serverless_compute=True,
             max_num_clusters=max_clusters,
-            auto_stop_mins=WAREHOUSE_AUTO_STOP_MINS,
-            spot_instance_policy=SpotInstancePolicy.COST_OPTIMIZED,
+            auto_stop_mins=WAREHOUSE_AUTO_STOP_MINS
         )
 
         warehouse_id = warehouse.id

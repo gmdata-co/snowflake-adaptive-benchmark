@@ -134,6 +134,15 @@ class SnowflakeBenchmark:
         )
         logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_name}")
 
+        # Record wall clock start time for this warehouse
+        self.storage.record_run_start(
+            run_id=self.run_id,
+            platform="snowflake",
+            scenario=scenario,
+            warehouse_size=warehouse_size.upper(),
+            warehouse_name=warehouse_name,
+        )
+
         try:
             # Switch to this warehouse
             self.warehouse_manager.switch_warehouse(warehouse_name)
@@ -157,6 +166,14 @@ class SnowflakeBenchmark:
         except Exception as e:
             logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
             raise
+        finally:
+            # Record wall clock end time for this warehouse
+            self.storage.record_run_end(
+                run_id=self.run_id,
+                platform="snowflake",
+                scenario=scenario,
+                warehouse_size=warehouse_size.upper(),
+            )
 
     def run_cold_start_trial(
         self,
@@ -206,35 +223,53 @@ class SnowflakeBenchmark:
                 )
                 logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
 
-                # Switch to this warehouse
-                self.warehouse_manager.switch_warehouse(warehouse_name)
-
-                for query_num in query_nums:
-                    # Resume warehouse before query
-                    logger.info(
-                        f"\n[{warehouse_size.upper()}] Resuming warehouse for query {query_num}"
-                    )
-                    self.warehouse_manager.resume_warehouse(warehouse_name)
-
-                    # Execute query once (run_num=1, always cold start)
-                    self.query_executor.execute_query(
-                        query_num=query_num,
-                        run_num=1,
-                        warehouse_name=warehouse_name,
-                        warehouse_size=warehouse_size.upper(),
-                        scenario=scenario,
-                        force_run_type="cold",  # Force cold run type
-                    )
-
-                    # Suspend warehouse after query
-                    logger.info(
-                        f"[{warehouse_size.upper()}] Suspending warehouse after query {query_num}"
-                    )
-                    self.warehouse_manager.suspend_warehouse(warehouse_name)
-
-                logger.info(
-                    f"\n[{warehouse_size.upper()}] ✅ Completed COLD START trial on {warehouse_name}"
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="snowflake",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_name,
                 )
+
+                try:
+                    # Switch to this warehouse
+                    self.warehouse_manager.switch_warehouse(warehouse_name)
+
+                    for query_num in query_nums:
+                        # Resume warehouse before query
+                        logger.info(
+                            f"\n[{warehouse_size.upper()}] Resuming warehouse for query {query_num}"
+                        )
+                        self.warehouse_manager.resume_warehouse(warehouse_name)
+
+                        # Execute query once (run_num=1, always cold start)
+                        self.query_executor.execute_query(
+                            query_num=query_num,
+                            run_num=1,
+                            warehouse_name=warehouse_name,
+                            warehouse_size=warehouse_size.upper(),
+                            scenario=scenario,
+                            force_run_type="cold",  # Force cold run type
+                        )
+
+                        # Suspend warehouse after query
+                        logger.info(
+                            f"[{warehouse_size.upper()}] Suspending warehouse after query {query_num}"
+                        )
+                        self.warehouse_manager.suspend_warehouse(warehouse_name)
+
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] ✅ Completed COLD START trial on {warehouse_name}"
+                    )
+                finally:
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="snowflake",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
 
         finally:
             # Always clean up warehouses
@@ -277,12 +312,20 @@ class SnowflakeBenchmark:
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {query_nums} ({len(query_nums)} queries)")
         logger.info("Execution: All queries in parallel (concurrent)")
-        logger.info("Warehouse: Single-cluster (multi-cluster requires Enterprise Edition)")
+
+        # Multi-cluster warehouse config for concurrent execution
+        # Scale up to handle parallel query load (Enterprise Edition required)
+        max_clusters = min(len(query_nums), 4)  # Cap at 4 clusters max
+        min_clusters = 1  # Start with 1, scale up as needed
+        logger.info(f"Warehouse: Multi-cluster (min: {min_clusters}, max: {max_clusters})")
         logger.info("=" * 70)
 
-        # Create warehouses (single-cluster for concurrent testing)
+        # Create multi-cluster warehouses for concurrent testing
         warehouse_map = self.warehouse_manager.create_all_warehouses(
-            warehouse_sizes, scenario
+            warehouse_sizes,
+            scenario,
+            max_cluster_count=max_clusters,
+            min_cluster_count=min_clusters,
         )
 
         try:
@@ -295,6 +338,15 @@ class SnowflakeBenchmark:
                 )
                 logger.info(
                     f"[{warehouse_size.upper()}] Executing {len(query_nums)} queries in parallel"
+                )
+
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="snowflake",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_name,
                 )
 
                 # Create separate benchmark instances for each query
@@ -354,6 +406,13 @@ class SnowflakeBenchmark:
                     # Disconnect all instances
                     for instance in benchmark_instances:
                         instance.disconnect()
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="snowflake",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
 
                 logger.info(
                     f"\n[{warehouse_size.upper()}] ✅ Completed CONCURRENT benchmark on {warehouse_name}"

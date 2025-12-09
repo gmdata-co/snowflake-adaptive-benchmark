@@ -39,9 +39,9 @@ class PricingDataLoader:
         """Establish connection to Databricks."""
         logger.info("Connecting to Databricks to query pricing data...")
 
-        warehouse_id = WAREHOUSES.get("xsmall")
+        warehouse_id = WAREHOUSES.get("admin")
         if not warehouse_id:
-            raise ValueError("XSMALL warehouse not configured in .env file")
+            raise ValueError("Admin warehouse not configured in .env file (DATABRICKS_ADMIN_WAREHOUSE)")
 
         logger.info(f"  Using warehouse: {warehouse_id}")
 

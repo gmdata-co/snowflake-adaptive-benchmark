@@ -134,7 +134,7 @@ uv run main.py
 
 | Flag | Options | Description |
 |------|---------|-------------|
-| `--warehouse-size` | `small`, `medium`, `large` | Warehouse size to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks X-Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake X-Large / Databricks Large |
+| `--warehouse-size` | `small`, `medium`, `large`, `all`, or comma-separated | Warehouse size(s) to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks X-Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake X-Large / Databricks Large<br>• `all`: Run all three sizes<br>• Comma-separated: e.g., `small,large` |
 | `--scenario` | `normal`, `coldstart`, `concurrent`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `concurrent`: All queries executed in parallel on same warehouse<br>• `all`: Run all three scenarios with unified run ID (default) |
 | `--queries` | e.g., `1,2,3` or `1-5` | Specific queries to run (default: all 22 TPC-H queries) |
 | `--snowflake-only` | (flag) | Run only Snowflake benchmark (skip Databricks) |
@@ -143,10 +143,16 @@ uv run main.py
 #### Examples
 
 ```bash
-# Run all scenarios (normal + coldstart + concurrent) with default medium warehouse
+# Run all scenarios with default medium warehouse
 uv run main.py
 
-# Run with large warehouse (runs all three scenarios by default)
+# Run all scenarios with ALL warehouse sizes (small, medium, large)
+uv run main.py --warehouse-size all
+
+# Run with specific warehouse sizes (comma-separated)
+uv run main.py --warehouse-size small,large
+
+# Run with large warehouse only
 uv run main.py --warehouse-size large
 
 # Run specific queries (all scenarios)
@@ -164,6 +170,9 @@ uv run main.py --scenario concurrent
 
 # Explicitly run all scenarios (same as default)
 uv run main.py --scenario all
+
+# Run ALL scenarios with ALL warehouse sizes (the full matrix!)
+uv run main.py --scenario all --warehouse-size all
 
 # Run cold start with specific queries
 uv run main.py --scenario coldstart --queries 1,5,10

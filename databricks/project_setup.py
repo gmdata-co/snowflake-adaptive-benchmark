@@ -36,28 +36,28 @@ CATALOG_NAME = "select_pathfinder"
 SCHEMA_NAME = "benchmark"  # Schema for TPC-H tables (scale factor agnostic)
 
 # Warehouse configurations based on project plan Section 2
-# Mapping to Snowflake equivalents:
-# - X-Small = Snowflake Small (Budget comparison)
-# - Small = Snowflake Medium (Primary baseline)
-# - Large = Snowflake X-Large (Performance ceiling)
+# Mapping to Snowflake equivalents (Databricks is "minus 1 size"):
+# - Small = Snowflake Medium (Tier 1 - smallest)
+# - Medium = Snowflake Large (Tier 2 - medium)
+# - Large = Snowflake X-Large (Tier 3 - largest)
 
 WAREHOUSES = {
-    "xsmall": {
-        "name": "benchmark_wh_xsmall",
-        "cluster_size": "2X-Small",  # Smallest serverless option
-        "comment": "X-Small warehouse for budget comparison (equivalent to Snowflake Small)",
-        "snowflake_equivalent": "SMALL",
-    },
     "small": {
         "name": "benchmark_wh_small",
         "cluster_size": "Small",  # Primary baseline
-        "comment": "Small warehouse for primary baseline testing (equivalent to Snowflake Medium)",
+        "comment": "Small warehouse for tier 1 testing (equivalent to Snowflake Medium)",
         "snowflake_equivalent": "MEDIUM",
+    },
+    "medium": {
+        "name": "benchmark_wh_medium",
+        "cluster_size": "Medium",  # Mid-tier
+        "comment": "Medium warehouse for tier 2 testing (equivalent to Snowflake Large)",
+        "snowflake_equivalent": "LARGE",
     },
     "large": {
         "name": "benchmark_wh_large",
         "cluster_size": "Large",
-        "comment": "Large warehouse for performance ceiling testing (equivalent to Snowflake X-Large)",
+        "comment": "Large warehouse for tier 3 testing (equivalent to Snowflake X-Large)",
         "snowflake_equivalent": "X-LARGE",
     },
 }

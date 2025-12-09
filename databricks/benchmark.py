@@ -124,7 +124,7 @@ class DatabricksBenchmark:
         This method is designed to run in a separate thread for parallel execution.
 
         Args:
-            warehouse_size: Warehouse size key (e.g., "xsmall", "small", "large")
+            warehouse_size: Warehouse size key (e.g., "small", "medium", "large")
             warehouse_id: ID of the warehouse to use
             query_nums: List of query numbers to run
             num_runs: Number of runs per query
@@ -134,6 +134,15 @@ class DatabricksBenchmark:
             f"\n[{warehouse_size.upper()}] Starting benchmark on warehouse {warehouse_id}"
         )
         logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_id}")
+
+        # Record wall clock start time for this warehouse
+        self.storage.record_run_start(
+            run_id=self.run_id,
+            platform="databricks",
+            scenario=scenario,
+            warehouse_size=warehouse_size.upper(),
+            warehouse_name=warehouse_id,
+        )
 
         try:
             # Execute all queries
@@ -155,6 +164,14 @@ class DatabricksBenchmark:
         except Exception as e:
             logger.error(f"\n[{warehouse_size.upper()}] ❌ Error: {e}")
             raise
+        finally:
+            # Record wall clock end time for this warehouse
+            self.storage.record_run_end(
+                run_id=self.run_id,
+                platform="databricks",
+                scenario=scenario,
+                warehouse_size=warehouse_size.upper(),
+            )
 
     def run_cold_start_trial(
         self,
@@ -207,6 +224,15 @@ class DatabricksBenchmark:
                 )
                 logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
 
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="databricks",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_id,
+                )
+
                 # Connect for this warehouse
                 self.connect(warehouse_id=warehouse_id)
 
@@ -241,6 +267,13 @@ class DatabricksBenchmark:
                     )
                 finally:
                     self.disconnect()
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="databricks",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
 
         finally:
             # Always clean up warehouses
@@ -306,6 +339,15 @@ class DatabricksBenchmark:
                     f"[{warehouse_size.upper()}] Executing {len(query_nums)} queries in parallel"
                 )
 
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="databricks",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_id,
+                )
+
                 # Create separate benchmark instances for each query
                 # Each needs its own connection for concurrent execution
                 benchmark_instances = []
@@ -364,6 +406,14 @@ class DatabricksBenchmark:
 
                     # Add a small delay to ensure connections are fully closed
                     time.sleep(3)
+
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="databricks",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
 
                 logger.info(
                     f"\n[{warehouse_size.upper()}] ✅ Completed CONCURRENT benchmark on {warehouse_id}"

@@ -183,16 +183,18 @@ class BenchmarkStorage:
                 )
             """)
 
-            # Create run_metadata table to track wall clock time per platform
+            # Create run_metadata table to track wall clock time per platform/warehouse
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS run_metadata (
                     run_id VARCHAR NOT NULL,
                     platform VARCHAR NOT NULL,
                     scenario VARCHAR NOT NULL,
+                    warehouse_size VARCHAR NOT NULL,
+                    warehouse_name VARCHAR NOT NULL,
                     start_timestamp TIMESTAMP NOT NULL,
                     end_timestamp TIMESTAMP,
                     total_wall_clock_seconds DOUBLE,
-                    PRIMARY KEY (run_id, platform, scenario)
+                    PRIMARY KEY (run_id, platform, scenario, warehouse_size)
                 )
             """)
 
@@ -453,25 +455,42 @@ class BenchmarkStorage:
 
         return self._execute_with_lock_retry("query database", _query_operation)
 
-    def record_run_start(self, run_id: str, platform: str, scenario: str):
+    def record_run_start(
+        self,
+        run_id: str,
+        platform: str,
+        scenario: str,
+        warehouse_size: str,
+        warehouse_name: str,
+    ):
         """
-        Record the start of a benchmark run for a specific platform and scenario.
+        Record the start of a benchmark run for a specific platform, scenario, and warehouse.
 
         Args:
             run_id: The run ID
             platform: Platform name (e.g., "snowflake" or "databricks")
             scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
+            warehouse_size: Warehouse size (e.g., "SMALL", "MEDIUM", "XLARGE")
+            warehouse_name: Full warehouse name
         """
         def _record_start_operation(conn):
             conn.execute("""
-                INSERT INTO run_metadata (run_id, platform, scenario, start_timestamp)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            """, [run_id, platform, scenario])
+                INSERT INTO run_metadata (
+                    run_id, platform, scenario, warehouse_size, warehouse_name, start_timestamp
+                )
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, [run_id, platform, scenario, warehouse_size, warehouse_name])
             return None
 
         self._execute_with_lock_retry("record run start", _record_start_operation)
 
-    def record_run_end(self, run_id: str, platform: str, scenario: str):
+    def record_run_end(
+        self,
+        run_id: str,
+        platform: str,
+        scenario: str,
+        warehouse_size: str,
+    ):
         """
         Record the end of a benchmark run and calculate total wall clock time.
 
@@ -479,6 +498,7 @@ class BenchmarkStorage:
             run_id: The run ID
             platform: Platform name (e.g., "snowflake" or "databricks")
             scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
+            warehouse_size: Warehouse size (e.g., "SMALL", "MEDIUM", "XLARGE")
         """
         def _record_end_operation(conn):
             conn.execute("""
@@ -486,8 +506,8 @@ class BenchmarkStorage:
                 SET
                     end_timestamp = CURRENT_TIMESTAMP,
                     total_wall_clock_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - start_timestamp))
-                WHERE run_id = ? AND platform = ? AND scenario = ?
-            """, [run_id, platform, scenario])
+                WHERE run_id = ? AND platform = ? AND scenario = ? AND warehouse_size = ?
+            """, [run_id, platform, scenario, warehouse_size])
             return None
 
         self._execute_with_lock_retry("record run end", _record_end_operation)
