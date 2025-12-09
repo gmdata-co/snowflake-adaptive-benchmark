@@ -16,7 +16,7 @@ import databricksLogo from "../assets/databricks-logo.png";
 
 // Custom shape for scatter points with logos (using SVG image for PNG support)
 function CustomScatterShape({ cx, cy, payload }) {
-  const size = 48;
+  const size = 36;
   const logoSrc = payload.platform === "snowflake" ? snowflakeLogo : databricksLogo;
 
   return (
@@ -39,10 +39,10 @@ function CustomLabel({ x, y, payload }) {
   return (
     <text
       x={x}
-      y={y - 35}
+      y={y - 26}
       textAnchor="middle"
       fill={color}
-      fontSize={13}
+      fontSize={11}
       fontWeight="600"
     >
       {`${Math.round(payload.time)}s / $${payload.cost.toFixed(2)}`}
@@ -109,42 +109,21 @@ export function BenchmarkChart({ comparison, onHover }) {
     ];
   }, [comparison]);
 
-  // Calculate axis domains with padding
-  const { xDomain, yDomain } = useMemo(() => {
-    if (!comparison) return { xDomain: [0, 1000], yDomain: [0, 5] };
-
-    const times = [comparison.snowflake.time, comparison.databricks.time];
-    const costs = [comparison.snowflake.cost, comparison.databricks.cost];
-
-    const minTime = Math.min(...times);
-    const maxTime = Math.max(...times);
-    const minCost = Math.min(...costs);
-    const maxCost = Math.max(...costs);
-
-    const timePadding = (maxTime - minTime) * 0.4 || 50;
-    const costPadding = (maxCost - minCost) * 0.5 || 0.5;
-
-    return {
-      xDomain: [
-        Math.max(0, minTime - timePadding),
-        maxTime + timePadding,
-      ],
-      yDomain: [
-        Math.max(0, minCost - costPadding),
-        maxCost + costPadding,
-      ],
-    };
-  }, [comparison]);
+  // Fixed axis domains across all comparisons for consistent visual comparison
+  // Max time across all data: 862.52s, max cost: 3.65
+  // Using fixed scales so animations show true movement
+  const xDomain = [0, 1000];  // Duration in seconds
+  const yDomain = [0, 4.5];   // Cost in USD
 
   if (!comparison) {
-    return <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>Loading chart...</div>;
+    return <div className="chart-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>Loading chart...</div>;
   }
 
   return (
-    <div style={{ width: '100%', height: '400px' }}>
+    <div className="chart-container" style={{ width: '100%' }}>
       <ResponsiveContainer width="100%" height="100%">
         <ScatterChart
-          margin={{ top: 40, right: 40, bottom: 40, left: 60 }}
+          margin={{ top: 30, right: 30, bottom: 35, left: 50 }}
         >
           <CartesianGrid
             strokeDasharray="3 3"

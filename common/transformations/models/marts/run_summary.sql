@@ -55,7 +55,7 @@ snowflake_costs AS (
         sm.run_id,
         sm.scenario,
         sm.warehouse_tier,
-        SUM(u.total_credits) * 3 AS total_dollars
+        SUM(u.total_credits) * 2 AS total_dollars
     FROM snowflake_metadata sm
     INNER JOIN {{ source('main', 'snowflake_wh_usage') }} u
         ON sm.warehouse_name = u.warehouse_name

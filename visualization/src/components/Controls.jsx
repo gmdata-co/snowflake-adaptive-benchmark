@@ -63,33 +63,13 @@ export function Controls({
   }, [handleKeyDown]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-      {/* Progress dots */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {Array.from({ length: totalCount }).map((_, index) => (
-          <button
-            key={index}
-            onClick={() => onSelect(index)}
-            style={{
-              width: index === currentIndex ? '14px' : '12px',
-              height: index === currentIndex ? '14px' : '12px',
-              borderRadius: '50%',
-              backgroundColor: index === currentIndex ? 'white' : '#4b5563',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'all 0.3s',
-            }}
-            aria-label={`Go to comparison ${index + 1}`}
-          />
-        ))}
-      </div>
-
-      {/* Navigation controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px 16px', backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', height: '100%', boxSizing: 'border-box' }}>
+      {/* Progress dots and navigation controls - combined row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
         <button
           onClick={onPrev}
           style={{
-            padding: '8px',
+            padding: '6px',
             borderRadius: '50%',
             backgroundColor: '#334155',
             border: 'none',
@@ -101,25 +81,30 @@ export function Controls({
           <ChevronLeft />
         </button>
 
-        <button
-          onClick={onPlayPause}
-          style={{
-            padding: '16px',
-            borderRadius: '50%',
-            background: isPlaying ? 'white' : 'linear-gradient(to right, #29B5E8, #FF3621)',
-            border: 'none',
-            color: isPlaying ? '#0f172a' : 'white',
-            cursor: 'pointer',
-          }}
-          aria-label={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? <PauseIcon /> : <PlayIcon />}
-        </button>
+        {/* Progress dots */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          {Array.from({ length: totalCount }).map((_, index) => (
+            <button
+              key={index}
+              onClick={() => onSelect(index)}
+              style={{
+                width: index === currentIndex ? '10px' : '8px',
+                height: index === currentIndex ? '10px' : '8px',
+                borderRadius: '50%',
+                backgroundColor: index === currentIndex ? 'white' : '#4b5563',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              aria-label={`Go to comparison ${index + 1}`}
+            />
+          ))}
+        </div>
 
         <button
           onClick={onNext}
           style={{
-            padding: '8px',
+            padding: '6px',
             borderRadius: '50%',
             backgroundColor: '#334155',
             border: 'none',
@@ -130,13 +115,28 @@ export function Controls({
         >
           <ChevronRight />
         </button>
+
+        <button
+          onClick={onPlayPause}
+          style={{
+            padding: '10px',
+            borderRadius: '50%',
+            background: isPlaying ? 'white' : 'linear-gradient(to right, #29B5E8, #FF3621)',
+            border: 'none',
+            color: isPlaying ? '#0f172a' : 'white',
+            cursor: 'pointer',
+          }}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? <PauseIcon /> : <PlayIcon />}
+        </button>
       </div>
 
-      {/* Keyboard hint */}
-      <p style={{ fontSize: '12px', color: '#6b7280' }}>
-        Press <kbd style={{ padding: '2px 6px', backgroundColor: '#334155', borderRadius: '4px', color: '#9ca3af' }}>Space</kbd> to play/pause,{" "}
-        <kbd style={{ padding: '2px 6px', backgroundColor: '#334155', borderRadius: '4px', color: '#9ca3af' }}>←</kbd>{" "}
-        <kbd style={{ padding: '2px 6px', backgroundColor: '#334155', borderRadius: '4px', color: '#9ca3af' }}>→</kbd> to navigate
+      {/* Keyboard hint - hidden on small screens */}
+      <p className="keyboard-hint" style={{ fontSize: '9px', color: '#6b7280', margin: 0 }}>
+        <kbd style={{ padding: '1px 4px', backgroundColor: '#334155', borderRadius: '3px', color: '#9ca3af', fontSize: '8px' }}>Space</kbd> play/pause{" "}
+        <kbd style={{ padding: '1px 4px', backgroundColor: '#334155', borderRadius: '3px', color: '#9ca3af', fontSize: '8px' }}>←</kbd>{" "}
+        <kbd style={{ padding: '1px 4px', backgroundColor: '#334155', borderRadius: '3px', color: '#9ca3af', fontSize: '8px' }}>→</kbd> navigate
       </p>
     </div>
   );

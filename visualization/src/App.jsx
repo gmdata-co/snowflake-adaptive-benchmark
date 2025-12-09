@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { SnowflakeLogo } from "./components/SnowflakeLogo";
-import { DatabricksLogo } from "./components/DatabricksLogo";
 import { BenchmarkChart } from "./components/BenchmarkChart";
 import { Controls } from "./components/Controls";
-import { ComparisonCard } from "./components/ComparisonCard";
+import { SpeedTile, CostTile, ScenarioTile } from "./components/ComparisonCard";
 import benchmarkData from "./data/benchmarkData.json";
 
 const CYCLE_INTERVAL = 4000;
@@ -83,47 +81,44 @@ function App() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: 'white' }}>
-      <div style={{ maxWidth: '1024px', margin: '0 auto', padding: '32px 16px' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '12px 16px 8px' }}>
         {/* Header */}
-        <header style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '2.25rem', fontWeight: 'bold', marginBottom: '8px', background: 'linear-gradient(to right, #29B5E8, #FF3621)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+        <header style={{ textAlign: 'center', marginBottom: '10px' }}>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '2px', background: 'linear-gradient(to right, #29B5E8, #FF3621)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Snowflake vs Databricks
           </h1>
-          <p style={{ color: '#9ca3af', fontSize: '1.125rem' }}>
+          <p style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
             TPC-H Benchmark Performance Comparison
           </p>
         </header>
 
-        {/* Legend */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <SnowflakeLogo size={28} />
-            <span style={{ color: '#29B5E8', fontWeight: '500' }}>Snowflake</span>
+        {/* 3-tile row: Controls (mobile: top), Scenario, Speed, Cost */}
+        <div className="tiles-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '12px' }}>
+          <div className="controls-tile">
+            <Controls
+              currentIndex={currentIndex}
+              totalCount={comparisons.length}
+              isPlaying={isPlaying}
+              onPlayPause={handlePlayPause}
+              onNext={handleNext}
+              onPrev={handlePrev}
+              onSelect={handleSelect}
+            />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <DatabricksLogo size={28} />
-            <span style={{ color: '#FF3621', fontWeight: '500' }}>Databricks</span>
+          <div className="scenario-tile">
+            <ScenarioTile comparison={currentComparison} />
+          </div>
+          <div className="speed-tile">
+            <SpeedTile comparison={currentComparison} />
+          </div>
+          <div className="cost-tile">
+            <CostTile comparison={currentComparison} />
           </div>
         </div>
 
-        {/* Comparison details */}
-        <div style={{ marginBottom: '24px' }}>
-          <ComparisonCard comparison={currentComparison} />
-        </div>
-
-        {/* Big Chart Title */}
-        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-          <h2 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: 'white' }}>
-            {currentComparison.scenarioLabel}
-          </h2>
-          <p style={{ fontSize: '1.25rem', color: '#9ca3af', marginTop: '4px' }}>
-            {currentComparison.snowflake.label} vs {currentComparison.databricks.label}
-          </p>
-        </div>
-
-        {/* Chart */}
+        {/* Chart - full width below */}
         <div
-          style={{ backgroundColor: '#1e293b', borderRadius: '16px', padding: '16px', marginBottom: '24px', border: '1px solid #334155' }}
+          style={{ backgroundColor: '#1e293b', borderRadius: '12px', padding: '12px', border: '1px solid #334155' }}
           onMouseEnter={handleChartHover}
           onMouseLeave={() => isPlaying && startAutoPlay()}
         >
@@ -133,20 +128,9 @@ function App() {
           />
         </div>
 
-        {/* Controls */}
-        <Controls
-          currentIndex={currentIndex}
-          totalCount={comparisons.length}
-          isPlaying={isPlaying}
-          onPlayPause={handlePlayPause}
-          onNext={handleNext}
-          onPrev={handlePrev}
-          onSelect={handleSelect}
-        />
-
         {/* Footer */}
-        <footer style={{ textAlign: 'center', marginTop: '32px', color: '#6b7280', fontSize: '0.875rem' }}>
-          <p>
+        <footer style={{ textAlign: 'center', marginTop: '8px', color: '#6b7280', fontSize: '0.7rem' }}>
+          <p style={{ margin: 0 }}>
             Data exported:{" "}
             {new Date(benchmarkData.exportedAt).toLocaleDateString()}
           </p>

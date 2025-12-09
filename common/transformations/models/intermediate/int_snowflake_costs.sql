@@ -17,7 +17,7 @@ warehouse_costs AS (
     SELECT
         u.warehouse_name,
         SUM(u.total_credits) AS total_credits,
-        SUM(u.total_credits * 3) AS total_dollars
+        SUM(u.total_credits * 2) AS total_dollars
     FROM {{ source('main', 'snowflake_wh_usage') }} u
     INNER JOIN latest_run_info w
         ON u.warehouse_name = w.warehouse_name

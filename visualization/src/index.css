@@ -43,3 +43,87 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+/* Tiles row - 4 columns on desktop */
+.tiles-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+/* Tablet: 2x2 grid with controls spanning top */
+@media (max-width: 900px) {
+  .tiles-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-rows: auto auto;
+  }
+
+  .controls-tile {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+  }
+}
+
+/* Mobile: single column, controls on top */
+@media (max-width: 540px) {
+  .tiles-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .controls-tile {
+    grid-column: 1;
+  }
+
+  .keyboard-hint {
+    display: none !important;
+  }
+}
+
+/* Winner badge shimmer animation */
+@keyframes shimmer {
+  0% {
+    background-position: 100% center;
+  }
+  50% {
+    background-position: -100% center;
+  }
+  50.1%, 100% {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+.winner-badge {
+  color: inherit;
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 35%,
+    #ffffff 50%,
+    currentColor 65%,
+    currentColor 100%
+  );
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 1s ease-out forwards;
+}
+
+/* Chart container responsive height */
+.chart-container {
+  height: 320px;
+}
+
+@media (max-width: 768px) {
+  .chart-container {
+    height: 280px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-container {
+    height: 240px;
+  }
+}

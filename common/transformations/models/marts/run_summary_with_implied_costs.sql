@@ -26,7 +26,7 @@ SELECT
             WHEN 'LARGE' THEN 8
             WHEN 'XLARGE' THEN 16
             ELSE 0
-        END * 3,
+        END * 2,
         4
     ) AS snow_implied_cost
 FROM {{ ref('run_summary') }}

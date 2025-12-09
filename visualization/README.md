@@ -1,16 +1,53 @@
-# React + Vite
+# Benchmark Visualization
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React dashboard for visualizing Snowflake vs Databricks benchmark results.
 
-Currently, two official plugins are available:
+## Local Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+cd visualization
+npm install
+npm run dev
+```
 
-## React Compiler
+Open http://localhost:5173 in your browser.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Build for Production
 
-## Expanding the ESLint configuration
+```bash
+npm run build
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Output is in the `dist/` folder.
+
+## Deploy to Google Cloud Run
+
+The app is deployed to Cloud Run in the `select-dev` project.
+
+**Live URL:** https://benchmark-viz-63679396994.us-central1.run.app/
+
+### Prerequisites
+
+1. Switch to the correct Google account and project:
+   ```bash
+   gcloud auth login
+   gcloud config set project select-dev
+   ```
+
+2. Verify you're in the right project:
+   ```bash
+   gcloud config get-value project
+   ```
+
+### Deploy
+
+From the `visualization/` directory:
+
+```bash
+gcloud run deploy benchmark-viz \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+This builds the Docker image and deploys it in one step.
