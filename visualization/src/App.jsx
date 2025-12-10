@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { TabNavigation } from "./components/TabNavigation";
-import { LegacyTab } from "./components/LegacyTab";
+// import { useState } from "react";
+// import { TabNavigation } from "./components/TabNavigation";
+// import { LegacyTab } from "./components/LegacyTab";
 import { SummaryTab } from "./components/SummaryTab";
 import benchmarkData from "./data/benchmarkData.json";
 
 function App() {
-  const [activeTab, setActiveTab] = useState(1);
+  // const [activeTab, setActiveTab] = useState(1);
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: 'white' }}>
@@ -20,13 +20,14 @@ function App() {
           </p>
         </header>
 
-        {/* Tab Navigation */}
-        <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+        {/* Tab Navigation - commented out */}
+        {/* <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} /> */}
 
         {/* Tab Content */}
         <div style={{ minHeight: '60vh' }}>
-          {activeTab === 1 && <SummaryTab />}
-          {activeTab === 2 && <LegacyTab />}
+          <SummaryTab />
+          {/* {activeTab === 1 && <SummaryTab />} */}
+          {/* {activeTab === 2 && <LegacyTab />} */}
         </div>
 
         {/* Footer */}

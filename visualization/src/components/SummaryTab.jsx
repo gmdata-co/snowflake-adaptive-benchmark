@@ -202,7 +202,7 @@ function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier, onHoverTie
       </h2>
 
       {/* Warehouse Tier Pills */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginRight: '80px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap', marginRight: '85px' }}>
         {warehouseSizes.snowflake.map((snowSize, i) => {
           const tier = i + 1;
           const dbxSize = warehouseSizes.databricks[i];
@@ -218,7 +218,7 @@ function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier, onHoverTie
                 display: 'flex',
                 alignItems: 'center',
                 gap: '5px',
-                padding: '5px 10px',
+                padding: '5px 11px',
                 borderRadius: '6px',
                 backgroundColor: isHighlighted ? '#334155' : '#0f172a',
                 border: isHighlighted ? '1px solid #475569' : '1px solid #334155',
@@ -227,9 +227,9 @@ function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier, onHoverTie
                 cursor: 'pointer',
               }}
             >
-              <span style={{ color: '#29B5E8', fontWeight: '600', fontSize: '0.8rem' }}>{snowSize}</span>
-              <span style={{ color: '#64748b', fontSize: '0.7rem' }}>vs</span>
-              <span style={{ color: '#FF3621', fontWeight: '600', fontSize: '0.8rem' }}>{dbxSize}</span>
+              <span style={{ color: '#29B5E8', fontWeight: '600', fontSize: '0.82rem' }}>{snowSize}</span>
+              <span style={{ color: '#64748b', fontSize: '0.72rem' }}>vs</span>
+              <span style={{ color: '#FF3621', fontWeight: '600', fontSize: '0.82rem' }}>{dbxSize}</span>
             </div>
           );
         })}
