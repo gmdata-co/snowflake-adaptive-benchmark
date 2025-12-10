@@ -179,7 +179,7 @@ function SummaryCostTile({ totals, hoveredComparison }) {
   );
 }
 
-function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier }) {
+function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier, onHoverTier }) {
   return (
     <div style={{
       display: 'flex',
@@ -202,7 +202,7 @@ function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier }) {
       </h2>
 
       {/* Warehouse Tier Pills */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginRight: '80px' }}>
         {warehouseSizes.snowflake.map((snowSize, i) => {
           const tier = i + 1;
           const dbxSize = warehouseSizes.databricks[i];
@@ -212,21 +212,24 @@ function ScenarioHeader({ scenarioLabel, warehouseSizes, hoveredTier }) {
           return (
             <div
               key={i}
+              onMouseEnter={() => onHoverTier(tier)}
+              onMouseLeave={() => onHoverTier(null)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
+                gap: '5px',
+                padding: '5px 10px',
                 borderRadius: '6px',
                 backgroundColor: isHighlighted ? '#334155' : '#0f172a',
                 border: isHighlighted ? '1px solid #475569' : '1px solid #334155',
                 opacity: isDimmed ? 0.4 : 1,
                 transition: 'all 0.2s ease',
+                cursor: 'pointer',
               }}
             >
-              <span style={{ color: '#29B5E8', fontWeight: '600', fontSize: '0.85rem' }}>{snowSize}</span>
-              <span style={{ color: '#64748b', fontSize: '0.75rem' }}>vs</span>
-              <span style={{ color: '#FF3621', fontWeight: '600', fontSize: '0.85rem' }}>{dbxSize}</span>
+              <span style={{ color: '#29B5E8', fontWeight: '600', fontSize: '0.8rem' }}>{snowSize}</span>
+              <span style={{ color: '#64748b', fontSize: '0.7rem' }}>vs</span>
+              <span style={{ color: '#FF3621', fontWeight: '600', fontSize: '0.8rem' }}>{dbxSize}</span>
             </div>
           );
         })}
@@ -277,6 +280,7 @@ function ScenarioSection({ scenarioLabel, comparisons }) {
         scenarioLabel={scenarioLabel}
         warehouseSizes={warehouseSizes}
         hoveredTier={hoveredTier}
+        onHoverTier={setHoveredTier}
       />
 
       {/* KPI Tiles Row - Above Chart, aligned with chart plot area */}

@@ -259,6 +259,7 @@ export function ScenarioSummaryChart({ scenarioData, hoveredTier, onHoverTier })
         <Tooltip
           content={<ComparisonTooltip timeUnit={timeUnit} scenarioData={scenarioData} />}
           cursor={{ strokeDasharray: "3 3", stroke: "#64748b" }}
+          isAnimationActive={false}
         />
         <Scatter
           data={chartData}
