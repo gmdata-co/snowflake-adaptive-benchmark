@@ -231,6 +231,70 @@ def run_concurrent_scenario(
     logger.info("=" * 80)
 
 
+def run_ctas_scenario(
+    warehouse_sizes_snow: Optional[List[str]] = None,
+    warehouse_sizes_dbx: Optional[List[str]] = None,
+    run_snowflake: bool = True,
+    run_databricks: bool = True,
+):
+    """
+    Run CTAS scenario: Execute ctas.sql query as CREATE TABLE AS SELECT.
+
+    This creates a large denormalized table by joining all TPC-H tables (~6B rows at SF1000).
+    Tables are dropped after warehouse destruction (not counted in metrics).
+
+    Args:
+        warehouse_sizes_snow: Snowflake warehouse sizes (default: ["medium"])
+        warehouse_sizes_dbx: Databricks warehouse sizes (default: ["small"])
+        run_snowflake: Whether to run Snowflake (default: True)
+        run_databricks: Whether to run Databricks (default: True)
+    """
+    logger.info("🚀 Starting CTAS Benchmark")
+    logger.info("=" * 80)
+
+    # Generate unified run ID for both platforms
+    storage = BenchmarkStorage(DUCKDB_PATH)
+    run_id = storage.get_next_run_id()
+    logger.info(f"📊 Run ID: {run_id}")
+    logger.info("=" * 80)
+
+    # Import benchmark classes
+    from snowflake.benchmark import SnowflakeBenchmark
+    from databricks.benchmark import DatabricksBenchmark
+
+    # Run Snowflake CTAS
+    if run_snowflake:
+        logger.info("\n❄️  Running Snowflake CTAS benchmark...")
+        try:
+            sf_benchmark = SnowflakeBenchmark(run_id=run_id)
+            sf_benchmark.connect()
+            sf_benchmark.run_ctas_benchmark(
+                warehouse_sizes=warehouse_sizes_snow,
+            )
+            sf_benchmark.disconnect()
+            logger.info("✅ Snowflake CTAS benchmark completed")
+        except Exception as e:
+            logger.error(f"❌ Snowflake CTAS benchmark failed: {e}", exc_info=True)
+            raise
+
+    # Run Databricks CTAS
+    if run_databricks:
+        logger.info("\n🧱 Running Databricks CTAS benchmark...")
+        try:
+            dbx_benchmark = DatabricksBenchmark(run_id=run_id)
+            dbx_benchmark.run_ctas_benchmark(
+                warehouse_sizes=warehouse_sizes_dbx,
+            )
+            logger.info("✅ Databricks CTAS benchmark completed")
+        except Exception as e:
+            logger.error(f"❌ Databricks CTAS benchmark failed: {e}", exc_info=True)
+            raise
+
+    logger.info("\n" + "=" * 80)
+    logger.info("✅ All CTAS benchmarks completed")
+    logger.info("=" * 80)
+
+
 def run_all_scenarios(
     warehouse_sizes_snow: Optional[List[str]] = None,
     warehouse_sizes_dbx: Optional[List[str]] = None,
@@ -345,6 +409,24 @@ def run_all_scenarios(
                 logger.error(f"❌ Snowflake concurrent benchmark ({snow_size}) failed: {e}", exc_info=True)
                 raise
 
+            # SCENARIO 4: CTAS Benchmark
+            logger.info("\n" + "-" * 60)
+            logger.info(f"[{snow_size.upper()}] SCENARIO 4: CTAS BENCHMARK")
+            logger.info("-" * 60)
+
+            logger.info(f"\n❄️  Running Snowflake CTAS benchmark ({snow_size})...")
+            try:
+                sf_benchmark = SnowflakeBenchmark(run_id=run_id)
+                sf_benchmark.connect()
+                sf_benchmark.run_ctas_benchmark(
+                    warehouse_sizes=[snow_size],
+                )
+                sf_benchmark.disconnect()
+                logger.info(f"✅ Snowflake CTAS benchmark ({snow_size}) completed")
+            except Exception as e:
+                logger.error(f"❌ Snowflake CTAS benchmark ({snow_size}) failed: {e}", exc_info=True)
+                raise
+
             logger.info(f"\n✅ Snowflake completed all scenarios for {snow_size.upper()}")
 
         logger.info("\n" + "=" * 80)
@@ -417,6 +499,22 @@ def run_all_scenarios(
                 logger.error(f"❌ Databricks concurrent benchmark ({dbx_size}) failed: {e}", exc_info=True)
                 raise
 
+            # SCENARIO 4: CTAS Benchmark
+            logger.info("\n" + "-" * 60)
+            logger.info(f"[{dbx_size.upper()}] SCENARIO 4: CTAS BENCHMARK")
+            logger.info("-" * 60)
+
+            logger.info(f"\n🧱 Running Databricks CTAS benchmark ({dbx_size})...")
+            try:
+                dbx_benchmark = DatabricksBenchmark(run_id=run_id)
+                dbx_benchmark.run_ctas_benchmark(
+                    warehouse_sizes=[dbx_size],
+                )
+                logger.info(f"✅ Databricks CTAS benchmark ({dbx_size}) completed")
+            except Exception as e:
+                logger.error(f"❌ Databricks CTAS benchmark ({dbx_size}) failed: {e}", exc_info=True)
+                raise
+
             logger.info(f"\n✅ Databricks completed all scenarios for {dbx_size.upper()}")
 
         logger.info("\n" + "=" * 80)
@@ -467,6 +565,12 @@ Examples:
   # Run cold start trial with specific queries
   python main.py --scenario coldstart --queries 1,5,10
 
+  # Run CTAS scenario only
+  python main.py --scenario ctas
+
+  # Run CTAS with specific warehouse size
+  python main.py --scenario ctas --warehouse-size xl
+
   # Run only Databricks (skip Snowflake)
   python main.py --databricks-only
 
@@ -489,9 +593,9 @@ Examples:
     parser.add_argument(
         "--scenario",
         type=str,
-        choices=["normal", "coldstart", "concurrent", "all"],
+        choices=["normal", "coldstart", "concurrent", "ctas", "all"],
         default="all",
-        help="Scenario to run: normal, coldstart, concurrent, or all (default - runs all scenarios with same run_id)",
+        help="Scenario to run: normal, coldstart, concurrent, ctas, or all (default - runs all scenarios with same run_id)",
     )
     parser.add_argument(
         "--snowflake-only",
@@ -595,6 +699,14 @@ Examples:
                 warehouse_sizes_snow=warehouse_sizes_snow,
                 warehouse_sizes_dbx=warehouse_sizes_dbx,
                 query_nums=query_nums,
+                run_snowflake=run_snowflake,
+                run_databricks=run_databricks,
+            )
+        elif args.scenario == "ctas":
+            logger.info("Running CTAS benchmark (CREATE TABLE AS SELECT)")
+            run_ctas_scenario(
+                warehouse_sizes_snow=warehouse_sizes_snow,
+                warehouse_sizes_dbx=warehouse_sizes_dbx,
                 run_snowflake=run_snowflake,
                 run_databricks=run_databricks,
             )

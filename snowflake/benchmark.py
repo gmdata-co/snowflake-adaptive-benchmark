@@ -458,6 +458,135 @@ class SnowflakeBenchmark:
             scenario=scenario,
         )
 
+    def run_ctas_benchmark(
+        self,
+        warehouse_sizes: list[str] = None,
+    ):
+        """
+        Run CTAS benchmark: Execute the special ctas.sql query as CREATE TABLE AS SELECT.
+
+        This creates a large denormalized table by joining all TPC-H tables (~6B rows at SF1000).
+        Tables are created during execution (tracked in metrics), then dropped
+        after warehouse destruction (not counted in metrics).
+
+        Args:
+            warehouse_sizes: List of warehouse sizes to test (default: ["medium"])
+        """
+        scenario = "ctas"
+
+        if warehouse_sizes is None:
+            warehouse_sizes = ["medium"]
+
+        logger.info("=" * 70)
+        logger.info("SNOWFLAKE CTAS BENCHMARK")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info("Query: ctas.sql (denormalized join of all TPC-H tables)")
+        logger.info("Execution: Sequential (CREATE TABLE AS SELECT)")
+        logger.info("=" * 70)
+
+        # Create warehouses with scenario in name
+        warehouse_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario
+        )
+
+        # Track created tables for cleanup
+        created_tables = []
+
+        # Load the CTAS query once
+        ctas_query = self.query_executor.load_ctas_query()
+
+        try:
+            # Execute CTAS query SEQUENTIALLY across warehouse sizes
+            for warehouse_size in warehouse_sizes:
+                warehouse_name = warehouse_map[warehouse_size]
+                table_name = f"BENCHMARK_CTAS_{self.run_id}"
+                created_tables.append(table_name)
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] Starting CTAS benchmark on {warehouse_name}"
+                )
+
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="snowflake",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_name,
+                )
+
+                try:
+                    # Switch to this warehouse
+                    self.warehouse_manager.switch_warehouse(warehouse_name)
+
+                    # Execute single CTAS query
+                    self.query_executor.execute_ctas_query(
+                        query_num=0,  # Special marker for CTAS query
+                        run_num=1,
+                        warehouse_name=warehouse_name,
+                        warehouse_size=warehouse_size.upper(),
+                        scenario=scenario,
+                        query_sql=ctas_query,
+                        table_name=table_name,
+                    )
+
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] ✅ Completed CTAS benchmark on {warehouse_name}"
+                    )
+
+                finally:
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="snowflake",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
+
+        finally:
+            # Destroy warehouses FIRST (ends timing)
+            self.warehouse_manager.destroy_all_warehouses()
+
+            # Drop tables AFTER warehouses destroyed (NOT counted in metrics)
+            self._cleanup_ctas_tables(created_tables)
+
+        logger.info("\n" + "=" * 70)
+        logger.info("CTAS BENCHMARK COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {DUCKDB_PATH}")
+        logger.info(f"Run ID: {self.run_id}")
+
+    def _cleanup_ctas_tables(self, table_names: list[str]):
+        """
+        Drop CTAS tables created during benchmark.
+
+        This runs AFTER warehouse destruction and is NOT counted in metrics.
+
+        Args:
+            table_names: List of table names to drop
+        """
+        if not table_names:
+            return
+
+        logger.info("\n🧹 Cleaning up CTAS tables (not counted in metrics)...")
+
+        # Snowflake: No warehouse needed for DROP TABLE (serverless operation)
+        cursor = self.conn.cursor()
+
+        for table_name in table_names:
+            try:
+                cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                logger.info(f"   Dropped: {table_name}")
+            except Exception as e:
+                logger.warning(f"   Failed to drop {table_name}: {e}")
+
+        cursor.close()
+        logger.info("✅ Table cleanup complete")
+
     def run_benchmark(
         self,
         warehouse_sizes: list[str] = None,

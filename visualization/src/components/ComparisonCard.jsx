@@ -1,5 +1,6 @@
 import { SnowflakeLogo } from "./SnowflakeLogo";
 import { DatabricksLogo } from "./DatabricksLogo";
+import { formatTime } from "../utils/formatTime";
 
 function formatDiff(snowValue, dbxValue, isTime = false) {
   if (isTime) {
@@ -32,7 +33,7 @@ const tileStyle = {
   boxSizing: 'border-box',
 };
 
-export function SpeedTile({ comparison }) {
+export function SpeedTile({ comparison, timeUnit = 'seconds' }) {
   if (!comparison) return null;
   const timeDiff = formatDiff(comparison.snowflake.time, comparison.databricks.time, true);
 
@@ -44,10 +45,10 @@ export function SpeedTile({ comparison }) {
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
           <SnowflakeLogo size={16} />
-          <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '18px', fontWeight: '600' }}>{Math.round(comparison.snowflake.time)}s</span>
+          <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '18px', fontWeight: '600' }}>{formatTime(comparison.snowflake.time, timeUnit)}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '18px', fontWeight: '600' }}>{Math.round(comparison.databricks.time)}s</span>
+          <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '18px', fontWeight: '600' }}>{formatTime(comparison.databricks.time, timeUnit)}</span>
           <DatabricksLogo size={16} />
         </div>
       </div>
@@ -93,18 +94,18 @@ export function ScenarioTile({ comparison }) {
 
   return (
     <div style={{ ...tileStyle, textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white', marginBottom: '4px' }}>
+      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>
         {comparison.scenarioLabel}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-          <SnowflakeLogo size={14} />
-          <span style={{ color: '#29B5E8', fontWeight: '500', fontSize: '0.8rem' }}>{comparison.snowflake.size}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <SnowflakeLogo size={22} />
+          <span style={{ color: '#29B5E8', fontWeight: '600', fontSize: '1.25rem' }}>{comparison.snowflake.size}</span>
         </div>
-        <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>vs</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-          <DatabricksLogo size={14} />
-          <span style={{ color: '#FF3621', fontWeight: '500', fontSize: '0.8rem' }}>{comparison.databricks.size}</span>
+        <span style={{ color: '#6b7280', fontSize: '1rem' }}>vs</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <DatabricksLogo size={22} />
+          <span style={{ color: '#FF3621', fontWeight: '600', fontSize: '1.25rem' }}>{comparison.databricks.size}</span>
         </div>
       </div>
     </div>

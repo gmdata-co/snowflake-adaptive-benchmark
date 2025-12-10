@@ -85,10 +85,10 @@ body {
   0% {
     background-position: 100% center;
   }
-  50% {
+  80% {
     background-position: -100% center;
   }
-  50.1%, 100% {
+  80.1%, 100% {
     background: none;
     -webkit-text-fill-color: currentColor;
   }
@@ -108,7 +108,7 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: shimmer 1s ease-out forwards;
+  animation: shimmer 4s ease-in-out forwards;
 }
 
 /* Chart container responsive height */

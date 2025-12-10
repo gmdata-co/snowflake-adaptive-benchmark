@@ -13,6 +13,7 @@ import { SnowflakeLogo } from "./SnowflakeLogo";
 import { DatabricksLogo } from "./DatabricksLogo";
 import snowflakeLogo from "../assets/snowflake-logo.png";
 import databricksLogo from "../assets/databricks-logo.png";
+import { formatTime, convertTime, getUnitSuffix } from "../utils/formatTime";
 
 // Custom shape for scatter points with logos (using SVG image for PNG support)
 function CustomScatterShape({ cx, cy, payload }) {
@@ -31,7 +32,7 @@ function CustomScatterShape({ cx, cy, payload }) {
 }
 
 // Custom label for data points
-function CustomLabel({ x, y, payload }) {
+function CustomLabel({ x, y, payload, timeUnit }) {
   if (!payload) return null;
   const isSnowflake = payload.platform === "snowflake";
   const color = isSnowflake ? "#29B5E8" : "#FF3621";
@@ -45,13 +46,13 @@ function CustomLabel({ x, y, payload }) {
       fontSize={11}
       fontWeight="600"
     >
-      {`${Math.round(payload.time)}s / $${payload.cost.toFixed(2)}`}
+      {`${formatTime(payload.time, timeUnit)} / $${payload.cost.toFixed(2)}`}
     </text>
   );
 }
 
 // Custom tooltip
-function CustomTooltip({ active, payload }) {
+function CustomTooltip({ active, payload, timeUnit }) {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     const isSnowflake = data.platform === "snowflake";
@@ -72,7 +73,7 @@ function CustomTooltip({ active, payload }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
             <span style={{ color: '#9ca3af' }}>Duration:</span>
             <span style={{ color: 'white', fontWeight: '500' }}>
-              {Math.round(data.time)}s
+              {formatTime(data.time, timeUnit)}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginTop: '4px' }}>
@@ -88,8 +89,8 @@ function CustomTooltip({ active, payload }) {
   return null;
 }
 
-export function BenchmarkChart({ comparison, onHover }) {
-  // Transform comparison data for the chart
+export function BenchmarkChart({ comparison, onHover, timeUnit = 'seconds', xDomain, yDomain }) {
+  // Transform comparison data for the chart - convert time to display unit
   const chartData = useMemo(() => {
     if (!comparison) return [];
 
@@ -97,23 +98,24 @@ export function BenchmarkChart({ comparison, onHover }) {
       {
         platform: "snowflake",
         label: comparison.snowflake.label,
-        time: comparison.snowflake.time,
+        time: comparison.snowflake.time,  // Keep raw seconds for formatting
+        displayTime: convertTime(comparison.snowflake.time, timeUnit),  // Converted for chart position
         cost: comparison.snowflake.cost,
       },
       {
         platform: "databricks",
         label: comparison.databricks.label,
         time: comparison.databricks.time,
+        displayTime: convertTime(comparison.databricks.time, timeUnit),
         cost: comparison.databricks.cost,
       },
     ];
-  }, [comparison]);
+  }, [comparison, timeUnit]);
 
-  // Fixed axis domains across all comparisons for consistent visual comparison
-  // Max time across all data: 862.52s, max cost: 3.65
-  // Using fixed scales so animations show true movement
-  const xDomain = [0, 1000];  // Duration in seconds
-  const yDomain = [0, 4.5];   // Cost in USD
+  // Default domains if not provided (for backwards compatibility)
+  const effectiveXDomain = xDomain || [0, 1000];
+  const effectiveYDomain = yDomain || [0, 4.5];
+  const unitSuffix = getUnitSuffix(timeUnit);
 
   if (!comparison) {
     return <div className="chart-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>Loading chart...</div>;
@@ -132,15 +134,15 @@ export function BenchmarkChart({ comparison, onHover }) {
           />
           <XAxis
             type="number"
-            dataKey="time"
-            domain={xDomain}
+            dataKey="displayTime"
+            domain={effectiveXDomain}
             name="Duration"
             tick={{ fill: "#94a3b8", fontSize: 12 }}
             axisLine={{ stroke: "#475569" }}
             tickLine={{ stroke: "#475569" }}
-            tickFormatter={(value) => `${Math.round(value)}s`}
+            tickFormatter={(value) => `${Math.round(value)}${unitSuffix}`}
             label={{
-              value: "Duration (seconds)",
+              value: `Duration (${unitSuffix === 's' ? 'seconds' : unitSuffix === 'min' ? 'minutes' : 'hours'})`,
               position: "bottom",
               offset: 10,
               fill: "#94a3b8",
@@ -150,7 +152,7 @@ export function BenchmarkChart({ comparison, onHover }) {
           <YAxis
             type="number"
             dataKey="cost"
-            domain={yDomain}
+            domain={effectiveYDomain}
             name="Cost"
             tick={{ fill: "#94a3b8", fontSize: 12 }}
             axisLine={{ stroke: "#475569" }}
@@ -168,7 +170,7 @@ export function BenchmarkChart({ comparison, onHover }) {
             }}
           />
           <Tooltip
-            content={<CustomTooltip />}
+            content={<CustomTooltip timeUnit={timeUnit} />}
             cursor={{ strokeDasharray: "3 3", stroke: "#64748b" }}
           />
           <Scatter
@@ -176,7 +178,7 @@ export function BenchmarkChart({ comparison, onHover }) {
             shape={<CustomScatterShape />}
             onMouseEnter={onHover}
           >
-            <LabelList content={<CustomLabel />} />
+            <LabelList content={<CustomLabel timeUnit={timeUnit} />} />
           </Scatter>
         </ScatterChart>
       </ResponsiveContainer>

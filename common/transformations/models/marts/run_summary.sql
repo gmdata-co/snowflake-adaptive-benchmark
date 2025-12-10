@@ -28,6 +28,9 @@ snowflake_metadata AS (
         END AS warehouse_tier
     FROM {{ source('main', 'run_metadata') }}
     WHERE platform = 'snowflake'
+    {% if var('run_ids', []) | length > 0 %}
+        AND run_id IN ('{{ var('run_ids') | join("', '") }}')
+    {% endif %}
 ),
 
 -- Databricks run metadata with tier mapping
@@ -47,6 +50,9 @@ databricks_metadata AS (
         END AS warehouse_tier
     FROM {{ source('main', 'run_metadata') }}
     WHERE platform = 'databricks'
+    {% if var('run_ids', []) | length > 0 %}
+        AND run_id IN ('{{ var('run_ids') | join("', '") }}')
+    {% endif %}
 ),
 
 -- Calculate Snowflake costs from usage table

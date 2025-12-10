@@ -3,7 +3,7 @@
     {
       "id": "normal-1",
       "scenario": "normal",
-      "scenarioLabel": "23 Sequential Queries",
+      "scenarioLabel": "22 Sequential Queries",
       "warehouseTier": 1,
       "snowflake": {
         "size": "MEDIUM",
@@ -21,7 +21,7 @@
     {
       "id": "normal-2",
       "scenario": "normal",
-      "scenarioLabel": "23 Sequential Queries",
+      "scenarioLabel": "22 Sequential Queries",
       "warehouseTier": 2,
       "snowflake": {
         "size": "LARGE",
@@ -39,7 +39,7 @@
     {
       "id": "normal-3",
       "scenario": "normal",
-      "scenarioLabel": "23 Sequential Queries",
+      "scenarioLabel": "22 Sequential Queries",
       "warehouseTier": 3,
       "snowflake": {
         "size": "XLARGE",
@@ -111,7 +111,7 @@
     {
       "id": "concurrent-1",
       "scenario": "concurrent",
-      "scenarioLabel": "23 Concurrent Queries",
+      "scenarioLabel": "22 Concurrent Queries",
       "warehouseTier": 1,
       "snowflake": {
         "size": "MEDIUM",
@@ -129,7 +129,7 @@
     {
       "id": "concurrent-2",
       "scenario": "concurrent",
-      "scenarioLabel": "23 Concurrent Queries",
+      "scenarioLabel": "22 Concurrent Queries",
       "warehouseTier": 2,
       "snowflake": {
         "size": "LARGE",
@@ -147,7 +147,7 @@
     {
       "id": "concurrent-3",
       "scenario": "concurrent",
-      "scenarioLabel": "23 Concurrent Queries",
+      "scenarioLabel": "22 Concurrent Queries",
       "warehouseTier": 3,
       "snowflake": {
         "size": "XLARGE",
@@ -161,7 +161,61 @@
         "time": 176.47,
         "cost": 3.24
       }
+    },
+    {
+      "id": "ctas-1",
+      "scenario": "ctas",
+      "scenarioLabel": "CTAS Query",
+      "warehouseTier": 1,
+      "snowflake": {
+        "size": "MEDIUM",
+        "label": "Snowflake Medium",
+        "time": 13459.16,
+        "cost": 30.17
+      },
+      "databricks": {
+        "size": "SMALL",
+        "label": "Databricks Small",
+        "time": 5669.82,
+        "cost": 13.37
+      }
+    },
+    {
+      "id": "ctas-2",
+      "scenario": "ctas",
+      "scenarioLabel": "CTAS Query",
+      "warehouseTier": 2,
+      "snowflake": {
+        "size": "LARGE",
+        "label": "Snowflake Large",
+        "time": 7755.93,
+        "cost": 34.98
+      },
+      "databricks": {
+        "size": "MEDIUM",
+        "label": "Databricks Medium",
+        "time": 2720.69,
+        "cost": 7.11
+      }
+    },
+    {
+      "id": "ctas-3",
+      "scenario": "ctas",
+      "scenarioLabel": "CTAS Query",
+      "warehouseTier": 3,
+      "snowflake": {
+        "size": "XLARGE",
+        "label": "Snowflake Xlarge",
+        "time": 3161.0,
+        "cost": 28.08
+      },
+      "databricks": {
+        "size": "LARGE",
+        "label": "Databricks Large",
+        "time": 1343.35,
+        "cost": 0.51
+      }
     }
   ],
-  "exportedAt": "2025-12-09T20:30:00.000000"
+  "exportedAt": "2025-12-10T09:39:16.730550"
 }
