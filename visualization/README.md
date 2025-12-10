@@ -22,7 +22,7 @@ Output is in the `dist/` folder.
 
 ## Deploy to Google Cloud Run
 
-The app is deployed to Cloud Run in the `select-dev` project.
+The app is deployed to Cloud Run in the `get-select-dev` project.
 
 **Live URL:** https://benchmark-viz-63679396994.us-central1.run.app/
 
@@ -31,7 +31,7 @@ The app is deployed to Cloud Run in the `select-dev` project.
 1. Switch to the correct Google account and project:
    ```bash
    gcloud auth login
-   gcloud config set project select-dev
+   gcloud config set project get-select-dev
    ```
 
 2. Verify you're in the right project:
