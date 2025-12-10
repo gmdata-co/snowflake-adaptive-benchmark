@@ -5,6 +5,9 @@ import { DatabricksLogo } from "./DatabricksLogo";
 import benchmarkData from "../data/benchmarkData.json";
 import { formatTime, getTimeUnit } from "../utils/formatTime";
 
+const DEFAULT_SNOW_CREDIT_PRICE = 2.0;
+const DEFAULT_DBX_DBU_PRICE = 0.7;
+
 const tileStyle = {
   backgroundColor: '#0f172a',
   borderRadius: '8px',
@@ -12,6 +15,77 @@ const tileStyle = {
   border: '1px solid #334155',
   boxSizing: 'border-box',
 };
+
+function PricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, onDbxPriceChange }) {
+  return (
+    <div style={{
+      position: 'fixed',
+      right: '20px',
+      top: '420px',
+      zIndex: 100,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <SnowflakeLogo size={16} />
+        <span style={{ color: '#9ca3af', fontSize: '12px' }}>$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={snowCreditPrice}
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
+              onSnowPriceChange(isNaN(val) ? 0 : val);
+            }
+          }}
+          style={{
+            width: '50px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            borderBottom: '1px solid #334155',
+            padding: '2px 4px',
+            color: '#29B5E8',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            textAlign: 'right',
+            outline: 'none',
+          }}
+        />
+        <span style={{ color: '#64748b', fontSize: '11px' }}>/credit</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <DatabricksLogo size={16} />
+        <span style={{ color: '#9ca3af', fontSize: '12px' }}>$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={dbxDbuPrice}
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
+              onDbxPriceChange(isNaN(val) ? 0 : val);
+            }
+          }}
+          style={{
+            width: '50px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            borderBottom: '1px solid #334155',
+            padding: '2px 4px',
+            color: '#FF3621',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            textAlign: 'right',
+            outline: 'none',
+          }}
+        />
+        <span style={{ color: '#64748b', fontSize: '11px' }}>/DBU</span>
+      </div>
+    </div>
+  );
+}
 
 function formatDiff(snowValue, dbxValue, isTime = false) {
   if (isTime) {
@@ -356,9 +430,26 @@ function TableOfContents({ scenarios, activeScenario, isOpen, onToggle }) {
 }
 
 export function SummaryTab() {
-  const comparisons = benchmarkData.comparisons;
+  const rawComparisons = benchmarkData.comparisons;
   const [activeScenario, setActiveScenario] = useState('normal');
   const [tocOpen, setTocOpen] = useState(true);
+  const [snowCreditPrice, setSnowCreditPrice] = useState(DEFAULT_SNOW_CREDIT_PRICE);
+  const [dbxDbuPrice, setDbxDbuPrice] = useState(DEFAULT_DBX_DBU_PRICE);
+
+  // Recalculate costs based on user-specified prices
+  const comparisons = useMemo(() => {
+    return rawComparisons.map(c => ({
+      ...c,
+      snowflake: {
+        ...c.snowflake,
+        cost: c.snowflake.credits ? c.snowflake.credits * snowCreditPrice : c.snowflake.cost,
+      },
+      databricks: {
+        ...c.databricks,
+        cost: c.databricks.dbus ? c.databricks.dbus * dbxDbuPrice : c.databricks.cost,
+      },
+    }));
+  }, [rawComparisons, snowCreditPrice, dbxDbuPrice]);
 
   // Group comparisons by scenario - order: sequential, concurrent, cold, ctas
   const groupedByScenario = useMemo(() => {
@@ -411,6 +502,14 @@ export function SummaryTab() {
 
   return (
     <>
+      {/* Pricing Inputs */}
+      <PricingInputs
+        snowCreditPrice={snowCreditPrice}
+        dbxDbuPrice={dbxDbuPrice}
+        onSnowPriceChange={setSnowCreditPrice}
+        onDbxPriceChange={setDbxDbuPrice}
+      />
+
       {/* Main content - centered as before */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {groupedByScenario.map(({ scenario, scenarioLabel, comparisons }) => (

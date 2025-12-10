@@ -45,6 +45,8 @@ def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
         dbx_warehouse_size,
         snow_wall_clock_seconds,
         dbx_wall_clock_seconds,
+        snow_total_credits,
+        dbx_total_dbus,
         snow_total_cost,
         dbx_total_cost
     FROM main.run_summary
@@ -71,6 +73,8 @@ def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
             dbx_size,
             snow_time,
             dbx_time,
+            snow_credits,
+            dbx_dbus,
             snow_cost,
             dbx_cost,
         ) = row
@@ -85,12 +89,14 @@ def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
                 "size": snow_size or "N/A",
                 "label": f"Snowflake {(snow_size or 'N/A').title()}",
                 "time": round(float(snow_time), 2) if snow_time else None,
+                "credits": round(float(snow_credits), 4) if snow_credits else None,
                 "cost": round(float(snow_cost), 2) if snow_cost else None,
             },
             "databricks": {
                 "size": dbx_size or "N/A",
                 "label": f"Databricks {(dbx_size or 'N/A').title()}",
                 "time": round(float(dbx_time), 2) if dbx_time else None,
+                "dbus": round(float(dbx_dbus), 4) if dbx_dbus else None,
                 "cost": round(float(dbx_cost), 2) if dbx_cost else None,
             },
         }

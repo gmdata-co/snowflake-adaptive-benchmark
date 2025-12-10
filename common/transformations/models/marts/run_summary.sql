@@ -61,6 +61,7 @@ snowflake_costs AS (
         sm.run_id,
         sm.scenario,
         sm.warehouse_tier,
+        SUM(u.total_credits) AS total_credits,
         SUM(u.total_credits) * 2 AS total_dollars
     FROM snowflake_metadata sm
     INNER JOIN {{ source('main', 'snowflake_wh_usage') }} u
@@ -74,6 +75,7 @@ databricks_costs AS (
         dm.run_id,
         dm.scenario,
         dm.warehouse_tier,
+        SUM(u.usage_quantity) AS total_dbus,
         SUM(u.usage_quantity * p.price_per_unit) AS total_dollars
     FROM databricks_metadata dm
     INNER JOIN {{ source('main', 'databricks_wh_usage') }} u
@@ -92,6 +94,8 @@ SELECT
     d.warehouse_size AS dbx_warehouse_size,
     ROUND(s.total_wall_clock_seconds, 2) AS snow_wall_clock_seconds,
     ROUND(d.total_wall_clock_seconds, 2) AS dbx_wall_clock_seconds,
+    ROUND(COALESCE(sc.total_credits, 0), 4) AS snow_total_credits,
+    ROUND(COALESCE(dc.total_dbus, 0), 4) AS dbx_total_dbus,
     ROUND(COALESCE(sc.total_dollars, 0), 2) AS snow_total_cost,
     ROUND(COALESCE(dc.total_dollars, 0), 2) AS dbx_total_cost,
     ROUND(COALESCE(sc.total_dollars, 0) - COALESCE(dc.total_dollars, 0), 2) AS cost_diff
