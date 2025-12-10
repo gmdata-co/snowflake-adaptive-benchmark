@@ -195,7 +195,7 @@
         "size": "MEDIUM",
         "label": "Databricks Medium",
         "time": 2720.69,
-        "cost": 7.11
+        "cost": 13.27
       }
     },
     {
@@ -213,9 +213,9 @@
         "size": "LARGE",
         "label": "Databricks Large",
         "time": 1343.35,
-        "cost": 0.51
+        "cost": 10.97
       }
     }
   ],
-  "exportedAt": "2025-12-10T09:39:16.730550"
+  "exportedAt": "2025-12-10T10:25:36.473559"
 }
