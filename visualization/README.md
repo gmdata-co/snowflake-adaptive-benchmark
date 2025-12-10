@@ -34,14 +34,15 @@ Output is in the `dist/` folder.
 
 ### Prerequisites
 
-1. Set your GCP project:
-   ```bash
-   export GCP_PROJECT=your-project-id
-   ```
-
-2. Authenticate and configure gcloud:
+1. Authenticate and find your project:
    ```bash
    gcloud auth login
+   gcloud projects list  # find your project ID
+   ```
+
+2. Set your GCP project:
+   ```bash
+   export GCP_PROJECT=your-project-id
    gcloud config set project $GCP_PROJECT
    ```
 
