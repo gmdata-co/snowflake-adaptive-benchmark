@@ -111,6 +111,24 @@ body {
   animation: shimmer 4s ease-in-out forwards;
 }
 
+/* KPI tiles row - stacks on narrow screens */
+.kpi-tiles-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+  margin-left: 100px;
+  margin-right: 80px;
+}
+
+@media (max-width: 768px) {
+  .kpi-tiles-row {
+    grid-template-columns: 1fr;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
 /* Chart container responsive height */
 .chart-container {
   height: 320px;

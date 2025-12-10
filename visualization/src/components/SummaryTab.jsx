@@ -1,12 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { ScenarioSummaryChart } from "./ScenarioSummaryChart";
 import { SnowflakeLogo } from "./SnowflakeLogo";
 import { DatabricksLogo } from "./DatabricksLogo";
 import benchmarkData from "../data/benchmarkData.json";
 import { formatTime, getTimeUnit } from "../utils/formatTime";
 
-const DEFAULT_SNOW_CREDIT_PRICE = 2.0;
-const DEFAULT_DBX_DBU_PRICE = 0.7;
+// Pricing defaults moved to App.jsx
 
 const tileStyle = {
   backgroundColor: '#0f172a',
@@ -16,76 +15,7 @@ const tileStyle = {
   boxSizing: 'border-box',
 };
 
-function PricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, onDbxPriceChange }) {
-  return (
-    <div style={{
-      position: 'fixed',
-      right: '20px',
-      top: '420px',
-      zIndex: 100,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <SnowflakeLogo size={16} />
-        <span style={{ color: '#9ca3af', fontSize: '12px' }}>$</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          value={snowCreditPrice}
-          onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
-              onSnowPriceChange(isNaN(val) ? 0 : val);
-            }
-          }}
-          style={{
-            width: '50px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderBottom: '1px solid #334155',
-            padding: '2px 4px',
-            color: '#29B5E8',
-            fontSize: '12px',
-            fontFamily: 'monospace',
-            textAlign: 'right',
-            outline: 'none',
-          }}
-        />
-        <span style={{ color: '#64748b', fontSize: '11px' }}>/credit</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <DatabricksLogo size={16} />
-        <span style={{ color: '#9ca3af', fontSize: '12px' }}>$</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          value={dbxDbuPrice}
-          onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
-              onDbxPriceChange(isNaN(val) ? 0 : val);
-            }
-          }}
-          style={{
-            width: '50px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderBottom: '1px solid #334155',
-            padding: '2px 4px',
-            color: '#FF3621',
-            fontSize: '12px',
-            fontFamily: 'monospace',
-            textAlign: 'right',
-            outline: 'none',
-          }}
-        />
-        <span style={{ color: '#64748b', fontSize: '11px' }}>/DBU</span>
-      </div>
-    </div>
-  );
-}
+// PricingInputs moved to App.jsx
 
 function formatDiff(snowValue, dbxValue, isTime = false) {
   if (isTime) {
@@ -284,14 +214,7 @@ function ScenarioSection({ scenarioLabel, comparisons }) {
       />
 
       {/* KPI Tiles Row - Above Chart, aligned with chart plot area */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
-        gap: '12px',
-        marginBottom: '16px',
-        marginLeft: '100px',
-        marginRight: '80px',
-      }}>
+      <div className="kpi-tiles-row">
         <SummarySpeedTile totals={totals} timeUnit={timeUnit} hoveredComparison={hoveredComparison} />
         <SummaryCostTile totals={totals} hoveredComparison={hoveredComparison} />
       </div>
@@ -306,139 +229,10 @@ function ScenarioSection({ scenarioLabel, comparisons }) {
   );
 }
 
-function TableOfContents({ scenarios, activeScenario, isOpen, onToggle }) {
-  const scrollToScenario = (scenarioId) => {
-    const element = document.getElementById(`scenario-${scenarioId}`);
-    if (element) {
-      const yOffset = -100; // Extra space at top
-      const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
-      window.scrollTo({ top: y, behavior: 'smooth' });
-    }
-  };
+// TableOfContents moved to App.jsx as HamburgerMenu
 
-  return (
-    <div style={{
-      position: 'fixed',
-      right: '20px',
-      top: '140px',
-      zIndex: 100,
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '0',
-    }}>
-      {/* Toggle button */}
-      <button
-        onClick={onToggle}
-        style={{
-          backgroundColor: '#1e293b',
-          border: '1px solid #334155',
-          borderRight: isOpen ? 'none' : '1px solid #334155',
-          borderRadius: isOpen ? '8px 0 0 8px' : '8px',
-          padding: '12px 8px',
-          cursor: 'pointer',
-          color: '#94a3b8',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s ease',
-        }}
-        onMouseEnter={(e) => {
-          e.target.style.backgroundColor = '#334155';
-          e.target.style.color = '#fff';
-        }}
-        onMouseLeave={(e) => {
-          e.target.style.backgroundColor = '#1e293b';
-          e.target.style.color = '#94a3b8';
-        }}
-        title={isOpen ? 'Hide scenarios' : 'Show scenarios'}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          style={{
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s ease',
-          }}
-        >
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
-      </button>
-
-      {/* Collapsible panel */}
-      <div style={{
-        backgroundColor: '#1e293b',
-        borderRadius: '8px 0 0 8px',
-        padding: isOpen ? '16px' : '0',
-        border: '1px solid #334155',
-        borderRight: 'none',
-        overflow: 'hidden',
-        width: isOpen ? '200px' : '0',
-        opacity: isOpen ? 1 : 0,
-        transition: 'all 0.2s ease',
-      }}>
-        <h3 style={{
-          color: '#9ca3af',
-          fontSize: '11px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          fontWeight: '600',
-          marginBottom: '12px',
-          marginTop: 0,
-          whiteSpace: 'nowrap',
-        }}>
-          Scenarios
-        </h3>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {scenarios.map(({ scenario, scenarioLabel }) => (
-            <button
-              key={scenario}
-              onClick={() => scrollToScenario(scenario)}
-              style={{
-                background: activeScenario === scenario ? '#334155' : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '8px 10px',
-                textAlign: 'left',
-                cursor: 'pointer',
-                color: activeScenario === scenario ? '#fff' : '#94a3b8',
-                fontSize: '12px',
-                fontWeight: activeScenario === scenario ? '600' : '400',
-                transition: 'all 0.15s ease',
-                borderLeft: activeScenario === scenario ? '3px solid #3b82f6' : '3px solid transparent',
-                whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => {
-                if (activeScenario !== scenario) {
-                  e.target.style.backgroundColor = '#0f172a';
-                  e.target.style.color = '#cbd5e1';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (activeScenario !== scenario) {
-                  e.target.style.backgroundColor = 'transparent';
-                  e.target.style.color = '#94a3b8';
-                }
-              }}
-            >
-              {scenarioLabel}
-            </button>
-          ))}
-        </nav>
-      </div>
-    </div>
-  );
-}
-
-export function SummaryTab() {
+export function SummaryTab({ snowCreditPrice, dbxDbuPrice }) {
   const rawComparisons = benchmarkData.comparisons;
-  const [activeScenario, setActiveScenario] = useState('normal');
-  const [tocOpen, setTocOpen] = useState(true);
-  const [snowCreditPrice, setSnowCreditPrice] = useState(DEFAULT_SNOW_CREDIT_PRICE);
-  const [dbxDbuPrice, setDbxDbuPrice] = useState(DEFAULT_DBX_DBU_PRICE);
 
   // Recalculate costs based on user-specified prices
   const comparisons = useMemo(() => {
@@ -474,65 +268,16 @@ export function SummaryTab() {
     }));
   }, [comparisons]);
 
-  // Set up intersection observer to track active section
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const scenarioId = entry.target.id.replace('scenario-', '');
-            setActiveScenario(scenarioId);
-          }
-        });
-      },
-      { threshold: 0.3, rootMargin: '-100px 0px -50% 0px' }
-    );
-
-    // Delay to ensure elements are mounted
-    const timeoutId = setTimeout(() => {
-      groupedByScenario.forEach(({ scenario }) => {
-        const element = document.getElementById(`scenario-${scenario}`);
-        if (element) observer.observe(element);
-      });
-    }, 100);
-
-    return () => {
-      clearTimeout(timeoutId);
-      observer.disconnect();
-    };
-  }, [groupedByScenario]);
-
   return (
-    <>
-      {/* Pricing Inputs */}
-      <PricingInputs
-        snowCreditPrice={snowCreditPrice}
-        dbxDbuPrice={dbxDbuPrice}
-        onSnowPriceChange={setSnowCreditPrice}
-        onDbxPriceChange={setDbxDbuPrice}
-      />
-
-      {/* Main content - centered as before */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        {groupedByScenario.map(({ scenario, scenarioLabel, comparisons }) => (
-          <div key={scenario} id={`scenario-${scenario}`}>
-            <ScenarioSection
-              scenarioLabel={scenarioLabel}
-              comparisons={comparisons}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Floating Table of Contents */}
-      <TableOfContents
-        scenarios={groupedByScenario}
-        activeScenario={activeScenario}
-        isOpen={tocOpen}
-        onToggle={() => setTocOpen(!tocOpen)}
-      />
-    </>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {groupedByScenario.map(({ scenario, scenarioLabel, comparisons }) => (
+        <div key={scenario} id={`scenario-${scenario}`}>
+          <ScenarioSection
+            scenarioLabel={scenarioLabel}
+            comparisons={comparisons}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
