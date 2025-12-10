@@ -2,6 +2,16 @@
 
 React dashboard for visualizing Snowflake vs Databricks benchmark results.
 
+## Update Data
+
+After running benchmarks, update the visualization data by exporting from DuckDB:
+
+```bash
+uv run visualization/update_data.py
+```
+
+This queries the `run_summary` view and exports to `src/data/benchmarkData.json`.
+
 ## Local Development
 
 ```bash
@@ -22,19 +32,20 @@ Output is in the `dist/` folder.
 
 ## Deploy to Google Cloud Run
 
-The app is deployed to Cloud Run in the `get-select-dev` project.
-
-**Live URL:** https://benchmark-viz-63679396994.us-central1.run.app/
-
 ### Prerequisites
 
-1. Switch to the correct Google account and project:
+1. Set your GCP project:
    ```bash
-   gcloud auth login
-   gcloud config set project get-select-dev
+   export GCP_PROJECT=your-project-id
    ```
 
-2. Verify you're in the right project:
+2. Authenticate and configure gcloud:
+   ```bash
+   gcloud auth login
+   gcloud config set project $GCP_PROJECT
+   ```
+
+3. Verify you're in the right project:
    ```bash
    gcloud config get-value project
    ```
@@ -45,6 +56,7 @@ From the `visualization/` directory:
 
 ```bash
 gcloud run deploy benchmark-viz \
+  --project $GCP_PROJECT \
   --source . \
   --region us-central1 \
   --allow-unauthenticated
