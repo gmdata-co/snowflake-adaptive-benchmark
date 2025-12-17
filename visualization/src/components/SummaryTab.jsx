@@ -246,7 +246,7 @@ function ScenarioSection({ scenarioLabel, comparisons }) {
     };
   }, [comparisons]);
 
-  const hoveredComparison = hoveredTier
+  const hoveredComparison = hoveredTier !== null
     ? comparisons.find(c => c.warehouseTier === hoveredTier)
     : null;
 
