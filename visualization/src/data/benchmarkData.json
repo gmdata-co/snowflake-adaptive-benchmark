@@ -75,6 +75,20 @@
       }
     },
     {
+      "id": "normal-4",
+      "scenario": "normal",
+      "scenarioLabel": "22 Sequential Queries",
+      "warehouseTier": 4,
+      "snowflake": null,
+      "databricks": {
+        "size": "XLARGE",
+        "label": "Databricks Xlarge",
+        "time": 270.02,
+        "dbus": 6.1197,
+        "cost": 4.28
+      }
+    },
+    {
       "id": "coldstart-0",
       "scenario": "coldstart",
       "scenarioLabel": "5 Cold Start Queries",
@@ -146,6 +160,20 @@
         "time": 256.77,
         "dbus": 2.5802,
         "cost": 1.81
+      }
+    },
+    {
+      "id": "coldstart-4",
+      "scenario": "coldstart",
+      "scenarioLabel": "5 Cold Start Queries",
+      "warehouseTier": 4,
+      "snowflake": null,
+      "databricks": {
+        "size": "XLARGE",
+        "label": "Databricks Xlarge",
+        "time": 200.76,
+        "dbus": 3.9682,
+        "cost": 2.78
       }
     },
     {
@@ -223,9 +251,23 @@
       }
     },
     {
+      "id": "concurrent-4",
+      "scenario": "concurrent",
+      "scenarioLabel": "22 Concurrent Queries",
+      "warehouseTier": 4,
+      "snowflake": null,
+      "databricks": {
+        "size": "XLARGE",
+        "label": "Databricks Xlarge",
+        "time": 147.19,
+        "dbus": 7.4983,
+        "cost": 5.25
+      }
+    },
+    {
       "id": "ctas-1",
       "scenario": "ctas",
-      "scenarioLabel": "CTAS Query",
+      "scenarioLabel": "5 CTAS Queries",
       "warehouseTier": 1,
       "snowflake": {
         "size": "MEDIUM",
@@ -245,7 +287,7 @@
     {
       "id": "ctas-2",
       "scenario": "ctas",
-      "scenarioLabel": "CTAS Query",
+      "scenarioLabel": "5 CTAS Queries",
       "warehouseTier": 2,
       "snowflake": {
         "size": "LARGE",
@@ -265,7 +307,7 @@
     {
       "id": "ctas-3",
       "scenario": "ctas",
-      "scenarioLabel": "CTAS Query",
+      "scenarioLabel": "5 CTAS Queries",
       "warehouseTier": 3,
       "snowflake": {
         "size": "XLARGE",
@@ -281,7 +323,21 @@
         "dbus": 20.0331,
         "cost": 14.02
       }
+    },
+    {
+      "id": "ctas-4",
+      "scenario": "ctas",
+      "scenarioLabel": "5 CTAS Queries",
+      "warehouseTier": 4,
+      "snowflake": null,
+      "databricks": {
+        "size": "XLARGE",
+        "label": "Databricks Xlarge",
+        "time": 660.65,
+        "dbus": 14.6423,
+        "cost": 10.25
+      }
     }
   ],
-  "exportedAt": "2025-12-16T22:52:50.084393"
+  "exportedAt": "2025-12-16T23:06:59.049401"
 }
