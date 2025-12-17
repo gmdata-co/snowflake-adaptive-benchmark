@@ -30,7 +30,18 @@ The tool supports three benchmarking scenarios:
    - Uses multi-cluster warehouses to handle parallel execution
    - Defaults to all 22 queries (configurable)
 
-Use `--scenario normal`, `--scenario coldstart`, `--scenario concurrent`, or `--scenario all` (default) to run all three scenarios with a unified run ID.
+4. **CTAS (Create Table As Select)**
+   - Benchmarks write performance by creating tables with different data shapes
+   - Tests data ingestion and table creation performance
+   - Five variants with different row counts and column widths:
+     - `narrow_tall`: Many rows, few columns (~6B rows, minimal columns)
+     - `standard_tall`: Many rows, standard columns (~6B rows)
+     - `medium_wide`: Moderate rows, more columns
+     - `very_wide`: Fewer rows, many columns (wide denormalized table)
+     - `filtered`: Subset of data with filters applied
+   - Tables are automatically dropped after benchmark completion
+
+Use `--scenario normal`, `--scenario coldstart`, `--scenario concurrent`, `--scenario ctas`, or `--scenario all` (default) to run all scenarios with a unified run ID.
 
 ## Getting Started
 
@@ -134,9 +145,10 @@ uv run main.py
 
 | Flag | Options | Description |
 |------|---------|-------------|
-| `--warehouse-size` | `small`, `medium`, `large`, `all`, or comma-separated | Warehouse size(s) to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks X-Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake X-Large / Databricks Large<br>• `all`: Run all three sizes<br>• Comma-separated: e.g., `small,large` |
-| `--scenario` | `normal`, `coldstart`, `concurrent`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `concurrent`: All queries executed in parallel on same warehouse<br>• `all`: Run all three scenarios with unified run ID (default) |
+| `--warehouse-size` | `small`, `medium`, `large`, `xl`, `2xl`, `all`, or comma-separated | Warehouse size(s) to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake Large / Databricks Medium<br>• `xl`: Snowflake XLarge / Databricks Large<br>• `2xl`: Snowflake 2XLarge / Databricks XLarge<br>• `all`: Run all sizes<br>• Comma-separated: e.g., `medium,xl` |
+| `--scenario` | `normal`, `coldstart`, `concurrent`, `ctas`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `concurrent`: All queries executed in parallel on same warehouse<br>• `ctas`: Create Table As Select benchmarks with multiple data shapes<br>• `all`: Run all scenarios with unified run ID (default) |
 | `--queries` | e.g., `1,2,3` or `1-5` | Specific queries to run (default: all 22 TPC-H queries) |
+| `--ctas-variants` | comma-separated list | CTAS variants to run (default: all). Options: `narrow_tall`, `standard_tall`, `medium_wide`, `very_wide`, `filtered` |
 | `--snowflake-only` | (flag) | Run only Snowflake benchmark (skip Databricks) |
 | `--databricks-only` | (flag) | Run only Databricks benchmark (skip Snowflake) |
 
@@ -188,6 +200,21 @@ uv run main.py --snowflake-only
 
 # Combine flags: large warehouse, specific queries, all scenarios
 uv run main.py --warehouse-size large --queries 1-10 --scenario all
+
+# Run CTAS scenario with all variants
+uv run main.py --scenario ctas
+
+# Run CTAS with specific variants (skip very_wide)
+uv run main.py --scenario ctas --ctas-variants narrow_tall,standard_tall,medium_wide,filtered
+
+# Run CTAS on multiple warehouse sizes
+uv run main.py --scenario ctas --warehouse-size medium,large,xl
+
+# Run CTAS on Snowflake small only, skipping very_wide
+uv run main.py --scenario ctas --snowflake-only --warehouse-size small --ctas-variants narrow_tall,standard_tall,medium_wide,filtered
+
+# Run CTAS on Databricks XL only (uses 2xl mapping)
+uv run main.py --scenario ctas --databricks-only --warehouse-size 2xl
 ```
 
 ### 4. Enrich Results with Cost and Performance Data

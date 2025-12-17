@@ -142,6 +142,29 @@ class QueryExecutor:
 
         return query_sql
 
+    def load_ctas_query_variant(self, variant: str) -> str:
+        """
+        Load a specific CTAS variant query from file.
+
+        Args:
+            variant: Variant name (narrow_tall, standard_tall, medium_wide,
+                    very_wide, filtered)
+
+        Returns:
+            Query SQL string
+
+        Raises:
+            FileNotFoundError: If variant query file doesn't exist
+        """
+        query_file = QUERIES_DIR / f"ctas_{variant}.sql"
+        if not query_file.exists():
+            raise FileNotFoundError(f"CTAS variant query file not found: {query_file}")
+
+        with open(query_file, "r") as f:
+            query_sql = f.read().strip()
+
+        return query_sql
+
     def execute_query(
         self,
         query_num: int,
@@ -302,6 +325,7 @@ class QueryExecutor:
         force_run_type: Optional[str] = None,
         query_sql: Optional[str] = None,
         table_name: Optional[str] = None,
+        ctas_variant: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute a TPC-H query as CREATE TABLE AS SELECT.
@@ -318,6 +342,7 @@ class QueryExecutor:
             force_run_type: Optional override for run type detection
             query_sql: Optional pre-loaded query SQL (if None, loads from q{query_num}.sql)
             table_name: Optional custom table name (if None, generates one)
+            ctas_variant: Optional variant name for CTAS benchmarks (narrow_tall, standard_tall, etc.)
 
         Returns:
             Dictionary with query execution metrics
@@ -328,7 +353,7 @@ class QueryExecutor:
         run_type = self.determine_run_type(query_num, warehouse_id, force_run_type)
 
         # Create JSON structured query tag
-        workload_id = "ctas" if query_num == 0 else f"q{query_num:02d}"
+        workload_id = ctas_variant if ctas_variant else ("ctas" if query_num == 0 else f"q{query_num:02d}")
         query_tag = {
             "app": APP_NAME,
             "workload_id": workload_id,
@@ -339,7 +364,7 @@ class QueryExecutor:
         # Include warehouse size in log output for clarity
         platform_prefix = "[DATABRICKS]"
         wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
-        query_label = "CTAS" if query_num == 0 else f"Query {query_num:2d}"
+        query_label = ctas_variant.upper() if ctas_variant else ("CTAS" if query_num == 0 else f"Query {query_num:2d}")
         log_prefix = f"{platform_prefix} {wh_prefix} [{scenario:10s}] [{run_type:10s}] Run {run_num}/{NUM_RUNS}: {query_label}"
 
         # Load query SQL if not provided, and wrap as CTAS
@@ -432,6 +457,7 @@ class QueryExecutor:
             "execution_time_sec": round(execution_time, 3),
             "rows_produced": rows_produced,
             "error_message": error_message or "",
+            "ctas_variant": ctas_variant,
         }
 
         # Log to DuckDB immediately

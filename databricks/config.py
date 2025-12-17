@@ -24,13 +24,14 @@ WAREHOUSES = {
 
 # Warehouse Configuration - warehouses are created dynamically during benchmark runs
 WAREHOUSE_PREFIX = "benchmark_dbx"  # Prefix for ephemeral warehouse names
-WAREHOUSE_SIZES = ["small", "medium", "large"]  # Available warehouse sizes
+WAREHOUSE_SIZES = ["small", "medium", "large", "xlarge"]  # Available warehouse sizes
 
 # Map benchmark size keys to Databricks cluster size strings
 WAREHOUSE_SIZE_MAP = {
     "small": "Small",
     "medium": "Medium",
     "large": "Large",
+    "xlarge": "X-Large",
 }
 
 # Warehouse auto-suspend configuration

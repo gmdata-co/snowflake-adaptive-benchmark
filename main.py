@@ -234,18 +234,19 @@ def run_concurrent_scenario(
 def run_ctas_scenario(
     warehouse_sizes_snow: Optional[List[str]] = None,
     warehouse_sizes_dbx: Optional[List[str]] = None,
+    variants: Optional[List[str]] = None,
     run_snowflake: bool = True,
     run_databricks: bool = True,
 ):
     """
-    Run CTAS scenario: Execute ctas.sql query as CREATE TABLE AS SELECT.
+    Run CTAS scenario: Execute CTAS query variants.
 
-    This creates a large denormalized table by joining all TPC-H tables (~6B rows at SF1000).
-    Tables are dropped after warehouse destruction (not counted in metrics).
+    This creates tables with different data shapes to benchmark write performance.
 
     Args:
         warehouse_sizes_snow: Snowflake warehouse sizes (default: ["medium"])
         warehouse_sizes_dbx: Databricks warehouse sizes (default: ["small"])
+        variants: CTAS variants to run (default: all 5)
         run_snowflake: Whether to run Snowflake (default: True)
         run_databricks: Whether to run Databricks (default: True)
     """
@@ -270,6 +271,7 @@ def run_ctas_scenario(
             sf_benchmark.connect()
             sf_benchmark.run_ctas_benchmark(
                 warehouse_sizes=warehouse_sizes_snow,
+                variants=variants,
             )
             sf_benchmark.disconnect()
             logger.info("✅ Snowflake CTAS benchmark completed")
@@ -284,6 +286,7 @@ def run_ctas_scenario(
             dbx_benchmark = DatabricksBenchmark(run_id=run_id)
             dbx_benchmark.run_ctas_benchmark(
                 warehouse_sizes=warehouse_sizes_dbx,
+                variants=variants,
             )
             logger.info("✅ Databricks CTAS benchmark completed")
         except Exception as e:
@@ -588,7 +591,7 @@ Examples:
         "--warehouse-size",
         type=str,
         default="medium",
-        help="Warehouse size(s) to use. Options: medium, large, xl, all, or comma-separated (e.g., 'medium,xl'). Maps automatically: medium→medium/small, large→large/medium, xl→xlarge/large. Default: medium",
+        help="Warehouse size(s) to use. Options: small, medium, large, xl, 2xl, all, or comma-separated (e.g., 'medium,xl'). Maps automatically: small→small/small, medium→medium/small, large→large/medium, xl→xlarge/large, 2xl→2xlarge/xlarge. Default: medium",
     )
     parser.add_argument(
         "--scenario",
@@ -606,6 +609,11 @@ Examples:
         "--databricks-only",
         action="store_true",
         help="Run only Databricks benchmark/trial (skip Snowflake)",
+    )
+    parser.add_argument(
+        "--ctas-variants",
+        type=str,
+        help="Comma-separated CTAS variants to run. Options: narrow_tall, standard_tall, medium_wide, very_wide, filtered. Default: all",
     )
 
     args = parser.parse_args()
@@ -626,6 +634,17 @@ Examples:
             logger.error(f"Invalid query format: {args.queries}")
             sys.exit(1)
 
+    # Parse CTAS variants if provided
+    ctas_variants = None
+    if args.ctas_variants:
+        valid_variants = ["narrow_tall", "standard_tall", "medium_wide", "very_wide", "filtered"]
+        ctas_variants = [v.strip() for v in args.ctas_variants.split(",")]
+        for v in ctas_variants:
+            if v not in valid_variants:
+                logger.error(f"Invalid CTAS variant: {v}. Must be one of: {valid_variants}")
+                sys.exit(1)
+        logger.info(f"Running CTAS variants: {ctas_variants}")
+
     logger.info("=" * 80)
     logger.info("🚀 Snowflake vs Databricks TPC-H Benchmark")
     logger.info("=" * 80)
@@ -634,6 +653,10 @@ Examples:
     # The mapping ensures equivalent compute power across platforms
     # Databricks is "minus 1 size" compared to Snowflake
     warehouse_size_mapping = {
+        "small": {
+            "snowflake": "small",
+            "databricks": "small",  # Databricks smallest available
+        },
         "medium": {
             "snowflake": "medium",
             "databricks": "small",
@@ -646,15 +669,19 @@ Examples:
             "snowflake": "xlarge",
             "databricks": "large",
         },
+        "2xl": {
+            "snowflake": "2xlarge",
+            "databricks": "xlarge",
+        },
     }
 
     # Parse warehouse sizes - supports: single value, "all", or comma-separated
     def parse_warehouse_sizes(size_arg: str) -> list:
         """Parse warehouse size argument into list of size keys."""
         if size_arg == "all":
-            return ["medium", "large", "xl"]
+            return ["small", "medium", "large", "xl", "2xl"]
         sizes = [s.strip() for s in size_arg.split(",")]
-        valid_sizes = ["medium", "large", "xl"]
+        valid_sizes = ["small", "medium", "large", "xl", "2xl"]
         for s in sizes:
             if s not in valid_sizes:
                 logger.error(f"Invalid warehouse size: {s}. Must be one of: {valid_sizes}")
@@ -707,6 +734,7 @@ Examples:
             run_ctas_scenario(
                 warehouse_sizes_snow=warehouse_sizes_snow,
                 warehouse_sizes_dbx=warehouse_sizes_dbx,
+                variants=ctas_variants,
                 run_snowflake=run_snowflake,
                 run_databricks=run_databricks,
             )

@@ -27,7 +27,7 @@ SCENARIO_LABELS = {
     "normal": "22 Sequential Queries",
     "coldstart": "5 Cold Start Queries",
     "concurrent": "22 Concurrent Queries",
-    "ctas": "CTAS Query",
+    "ctas": "5 CTAS Queries",
 }
 
 # Paths
@@ -36,7 +36,7 @@ OUTPUT_PATH = Path(__file__).parent / "src" / "data" / "benchmarkData.json"
 
 
 def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
-    """Query run_summary view and return formatted comparison data."""
+    """Query run_summary_agg view and return formatted comparison data."""
     query = """
     SELECT
         scenario,
@@ -49,7 +49,7 @@ def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
         dbx_total_dbus,
         snow_total_cost,
         dbx_total_cost
-    FROM main.run_summary
+    FROM main.run_summary_agg
     ORDER BY
         CASE scenario
             WHEN 'normal' THEN 1
@@ -62,7 +62,7 @@ def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
     """
 
     results = conn.execute(query).fetchall()
-    logger.info(f"Fetched {len(results)} rows from run_summary")
+    logger.info(f"Fetched {len(results)} rows from run_summary_agg")
 
     comparisons = []
     for row in results:
@@ -79,26 +79,35 @@ def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
             dbx_cost,
         ) = row
 
-        # Handle None values gracefully
+        # Build platform data - set to None if warehouse_size is missing (no data for that platform)
+        # Use `is not None` checks since 0 is a valid value but falsy in Python
+        snowflake_data = None
+        if snow_size:
+            snowflake_data = {
+                "size": snow_size,
+                "label": f"Snowflake {snow_size.title()}",
+                "time": round(float(snow_time), 2) if snow_time is not None else None,
+                "credits": round(float(snow_credits), 4) if snow_credits is not None else None,
+                "cost": round(float(snow_cost), 2) if snow_cost is not None else None,
+            }
+
+        databricks_data = None
+        if dbx_size:
+            databricks_data = {
+                "size": dbx_size,
+                "label": f"Databricks {dbx_size.title()}",
+                "time": round(float(dbx_time), 2) if dbx_time is not None else None,
+                "dbus": round(float(dbx_dbus), 4) if dbx_dbus is not None else None,
+                "cost": round(float(dbx_cost), 2) if dbx_cost is not None else None,
+            }
+
         comparison = {
             "id": f"{scenario}-{tier}",
             "scenario": scenario,
             "scenarioLabel": SCENARIO_LABELS.get(scenario, scenario.title()),
             "warehouseTier": tier,
-            "snowflake": {
-                "size": snow_size or "N/A",
-                "label": f"Snowflake {(snow_size or 'N/A').title()}",
-                "time": round(float(snow_time), 2) if snow_time else None,
-                "credits": round(float(snow_credits), 4) if snow_credits else None,
-                "cost": round(float(snow_cost), 2) if snow_cost else None,
-            },
-            "databricks": {
-                "size": dbx_size or "N/A",
-                "label": f"Databricks {(dbx_size or 'N/A').title()}",
-                "time": round(float(dbx_time), 2) if dbx_time else None,
-                "dbus": round(float(dbx_dbus), 4) if dbx_dbus else None,
-                "cost": round(float(dbx_cost), 2) if dbx_cost else None,
-            },
+            "snowflake": snowflake_data,
+            "databricks": databricks_data,
         }
         comparisons.append(comparison)
 

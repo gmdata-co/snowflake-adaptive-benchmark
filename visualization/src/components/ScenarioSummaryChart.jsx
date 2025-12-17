@@ -61,6 +61,10 @@ function CustomScatterShape({ cx, cy, payload, hoveredTier }) {
 }
 
 function formatDiff(snowValue, dbxValue, isTime = false) {
+  // Handle missing platform data
+  if (snowValue == null || dbxValue == null) {
+    return { text: "", winner: null, noComparison: true };
+  }
   if (isTime) {
     if (dbxValue > snowValue) {
       const percentFaster = (((dbxValue - snowValue) / dbxValue) * 100).toFixed(0);
@@ -92,8 +96,22 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
     const comparison = scenarioData.find(c => c.warehouseTier === tier);
     if (!comparison) return null;
 
-    const speedDiff = formatDiff(comparison.snowflake.time, comparison.databricks.time, true);
-    const costDiff = formatDiff(comparison.snowflake.cost, comparison.databricks.cost, false);
+    const hasSnowflake = comparison.snowflake != null;
+    const hasDatabricks = comparison.databricks != null;
+    const hasBoth = hasSnowflake && hasDatabricks;
+
+    const speedDiff = formatDiff(comparison.snowflake?.time, comparison.databricks?.time, true);
+    const costDiff = formatDiff(comparison.snowflake?.cost, comparison.databricks?.cost, false);
+
+    // Build header text
+    let headerText;
+    if (hasBoth) {
+      headerText = `${comparison.snowflake.size} vs ${comparison.databricks.size}`;
+    } else if (hasSnowflake) {
+      headerText = `Snowflake ${comparison.snowflake.size}`;
+    } else {
+      headerText = `Databricks ${comparison.databricks.size}`;
+    }
 
     return (
       <div style={{
@@ -113,46 +131,52 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
         `}</style>
 
         <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '10px', textAlign: 'center', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
-          {comparison.snowflake.size} vs {comparison.databricks.size}
+          {headerText}
         </div>
 
         {/* Snowflake Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-          <SnowflakeLogo size={20} />
-          <div style={{ flex: 1 }}>
-            <div style={{ color: '#29B5E8', fontWeight: '600', fontSize: '13px' }}>{comparison.snowflake.size}</div>
-            <div style={{ color: '#94a3b8', fontSize: '12px' }}>
-              {formatTime(comparison.snowflake.time, timeUnit)} / ${comparison.snowflake.cost.toFixed(2)}
+        {hasSnowflake && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: hasDatabricks ? '8px' : '0' }}>
+            <SnowflakeLogo size={20} />
+            <div style={{ flex: 1 }}>
+              <div style={{ color: '#29B5E8', fontWeight: '600', fontSize: '13px' }}>{comparison.snowflake.size}</div>
+              <div style={{ color: '#94a3b8', fontSize: '12px' }}>
+                {formatTime(comparison.snowflake.time, timeUnit)} / ${(comparison.snowflake.cost ?? 0).toFixed(2)}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Databricks Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-          <DatabricksLogo size={20} />
-          <div style={{ flex: 1 }}>
-            <div style={{ color: '#FF3621', fontWeight: '600', fontSize: '13px' }}>{comparison.databricks.size}</div>
-            <div style={{ color: '#94a3b8', fontSize: '12px' }}>
-              {formatTime(comparison.databricks.time, timeUnit)} / ${comparison.databricks.cost.toFixed(2)}
+        {hasDatabricks && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: hasBoth ? '10px' : '0' }}>
+            <DatabricksLogo size={20} />
+            <div style={{ flex: 1 }}>
+              <div style={{ color: '#FF3621', fontWeight: '600', fontSize: '13px' }}>{comparison.databricks.size}</div>
+              <div style={{ color: '#94a3b8', fontSize: '12px' }}>
+                {formatTime(comparison.databricks.time, timeUnit)} / ${(comparison.databricks.cost ?? 0).toFixed(2)}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Winner Conclusion */}
-        <div style={{ borderTop: '1px solid #334155', paddingTop: '10px', fontSize: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ color: '#9ca3af' }}>Speed:</span>
-            <span style={{ color: speedDiff.winner === 'snowflake' ? '#29B5E8' : speedDiff.winner === 'databricks' ? '#FF3621' : '#9ca3af', fontWeight: '600' }}>
-              {speedDiff.winner ? `${speedDiff.winner === 'snowflake' ? 'Snowflake' : 'Databricks'} ${speedDiff.text}` : speedDiff.text}
-            </span>
+        {/* Winner Conclusion - only show if both platforms exist */}
+        {hasBoth && !speedDiff.noComparison && (
+          <div style={{ borderTop: '1px solid #334155', paddingTop: '10px', fontSize: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <span style={{ color: '#9ca3af' }}>Speed:</span>
+              <span style={{ color: speedDiff.winner === 'snowflake' ? '#29B5E8' : speedDiff.winner === 'databricks' ? '#FF3621' : '#9ca3af', fontWeight: '600' }}>
+                {speedDiff.winner ? `${speedDiff.winner === 'snowflake' ? 'Snowflake' : 'Databricks'} ${speedDiff.text}` : speedDiff.text}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#9ca3af' }}>Cost:</span>
+              <span style={{ color: costDiff.winner === 'snowflake' ? '#29B5E8' : costDiff.winner === 'databricks' ? '#FF3621' : '#9ca3af', fontWeight: '600' }}>
+                {costDiff.winner ? `${costDiff.winner === 'snowflake' ? 'Snowflake' : 'Databricks'} ${costDiff.text}` : costDiff.text}
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#9ca3af' }}>Cost:</span>
-            <span style={{ color: costDiff.winner === 'snowflake' ? '#29B5E8' : costDiff.winner === 'databricks' ? '#FF3621' : '#9ca3af', fontWeight: '600' }}>
-              {costDiff.winner ? `${costDiff.winner === 'snowflake' ? 'Snowflake' : 'Databricks'} ${costDiff.text}` : costDiff.text}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -167,26 +191,34 @@ export function ScenarioSummaryChart({ scenarioData, hoveredTier, onHoverTier })
 
     const data = [];
     for (const comparison of scenarioData) {
-      maxTime = Math.max(maxTime, comparison.snowflake.time, comparison.databricks.time);
-      maxCost = Math.max(maxCost, comparison.snowflake.cost, comparison.databricks.cost);
+      // Only include platforms that have data
+      if (comparison.snowflake) {
+        maxTime = Math.max(maxTime, comparison.snowflake.time || 0);
+        maxCost = Math.max(maxCost, comparison.snowflake.cost || 0);
 
-      data.push({
-        platform: "snowflake",
-        tier: comparison.warehouseTier,
-        size: comparison.snowflake.size,
-        label: comparison.snowflake.label,
-        time: comparison.snowflake.time,
-        cost: comparison.snowflake.cost,
-      });
+        data.push({
+          platform: "snowflake",
+          tier: comparison.warehouseTier,
+          size: comparison.snowflake.size,
+          label: comparison.snowflake.label,
+          time: comparison.snowflake.time,
+          cost: comparison.snowflake.cost,
+        });
+      }
 
-      data.push({
-        platform: "databricks",
-        tier: comparison.warehouseTier,
-        size: comparison.databricks.size,
-        label: comparison.databricks.label,
-        time: comparison.databricks.time,
-        cost: comparison.databricks.cost,
-      });
+      if (comparison.databricks) {
+        maxTime = Math.max(maxTime, comparison.databricks.time || 0);
+        maxCost = Math.max(maxCost, comparison.databricks.cost || 0);
+
+        data.push({
+          platform: "databricks",
+          tier: comparison.warehouseTier,
+          size: comparison.databricks.size,
+          label: comparison.databricks.label,
+          time: comparison.databricks.time,
+          cost: comparison.databricks.cost,
+        });
+      }
     }
 
     const unit = getTimeUnit(maxTime);
