@@ -165,6 +165,28 @@ class QueryExecutor:
 
         return query_sql
 
+    def load_dml_query(self, operation: str) -> str:
+        """
+        Load a DML query (delete or insert) from file.
+
+        Args:
+            operation: Operation name ('delete' or 'insert')
+
+        Returns:
+            Query SQL string
+
+        Raises:
+            FileNotFoundError: If DML query file doesn't exist
+        """
+        query_file = QUERIES_DIR / f"dml_{operation}.sql"
+        if not query_file.exists():
+            raise FileNotFoundError(f"DML query file not found: {query_file}")
+
+        with open(query_file, "r") as f:
+            query_sql = f.read().strip()
+
+        return query_sql
+
     def execute_query(
         self,
         query_num: int,
@@ -458,6 +480,143 @@ class QueryExecutor:
             "rows_produced": rows_produced,
             "error_message": error_message or "",
             "ctas_variant": ctas_variant,
+        }
+
+        # Log to DuckDB immediately
+        self.storage.write_databricks_result(result)
+
+        return result
+
+    def execute_dml_query(
+        self,
+        operation: str,
+        run_num: int,
+        warehouse_id: str,
+        warehouse_size: str,
+        scenario: str,
+        force_run_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Execute a DML query (DELETE or INSERT) and capture metrics.
+
+        Unlike execute_ctas_query, this executes the SQL directly without wrapping.
+
+        Args:
+            operation: DML operation name ('delete' or 'insert')
+            run_num: Run iteration (1-4)
+            warehouse_id: ID of the warehouse
+            warehouse_size: Size of the warehouse (SMALL, MEDIUM, LARGE)
+            scenario: Scenario name (should be "dml")
+            force_run_type: Optional override for run type detection
+
+        Returns:
+            Dictionary with query execution metrics
+        """
+        query_num = 0  # Special marker for DML operations
+
+        # Determine run type based on warehouse state
+        run_type = self.determine_run_type(query_num, warehouse_id, force_run_type)
+
+        # Create JSON structured query tag
+        query_tag = {
+            "app": APP_NAME,
+            "workload_id": operation,
+            "run_id": self.run_id,
+            "scenario": scenario,
+        }
+
+        # Include warehouse size in log output for clarity
+        platform_prefix = "[DATABRICKS]"
+        wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
+        log_prefix = f"{platform_prefix} {wh_prefix} [{scenario:10s}] [{run_type:10s}] Run {run_num}/{NUM_RUNS}: {operation.upper()}"
+
+        # Load DML query
+        try:
+            dml_sql = self.load_dml_query(operation)
+        except FileNotFoundError as e:
+            logger.error(f"{log_prefix} ❌ Error: {e}")
+            return self._create_error_result(
+                query_num,
+                run_num,
+                run_type,
+                json.dumps(query_tag),
+                warehouse_id,
+                warehouse_size,
+                scenario,
+                str(e),
+            )
+
+        # Add query tag as SQL comment
+        query_tag_json = json.dumps(query_tag)
+        tagged_query = f"/* BENCHMARK: {query_tag_json} */\n{dml_sql}"
+
+        # Log query start
+        logger.info(f"{log_prefix} 🚀 Starting DML...")
+
+        # Execute query and measure time
+        start_time = time.time()
+        timestamp = datetime.utcnow().isoformat()
+        error_message = None
+        statement_id = None
+        rows_produced = 0
+
+        try:
+            # Execute query
+            cursor = self.connection.cursor()
+            cursor.execute(tagged_query)
+
+            # Get statement_id from cursor
+            try:
+                if (
+                    hasattr(cursor, "active_op_handle")
+                    and cursor.active_op_handle is not None
+                ):
+                    if hasattr(cursor.active_op_handle, "operationId"):
+                        # Convert GUID bytes to UUID string
+                        guid_bytes = cursor.active_op_handle.operationId.guid
+                        statement_id = str(UUID(bytes=guid_bytes))
+                        logger.debug(f"{log_prefix} Captured statement_id: {statement_id}")
+            except Exception as e:
+                logger.warning(f"{log_prefix} Failed to capture statement_id: {e}")
+
+            # Get row count from cursor if available
+            rows_produced = cursor.rowcount if cursor.rowcount >= 0 else -1
+
+            # Close cursor
+            cursor.close()
+
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"{log_prefix} ❌ Error: {error_message[:50]}")
+
+        execution_time = time.time() - start_time
+
+        if error_message is None:
+            row_msg = f"({rows_produced:,} rows)" if rows_produced >= 0 else ""
+            logger.info(f"{log_prefix} ✅ {execution_time:.2f}s {row_msg}".strip())
+
+            # Update warehouse state
+            state = self._get_warehouse_state(warehouse_id)
+            state["started"] = True
+            state["queries_executed"].add(query_num)
+
+        # Create result record
+        result = {
+            "run_id": self.run_id,
+            "timestamp": timestamp,
+            "platform": "databricks",
+            "scenario": scenario,
+            "warehouse_name": warehouse_id,
+            "warehouse_size": warehouse_size,
+            "query_num": query_num,
+            "run_num": run_num,
+            "run_type": run_type,
+            "query_tag": json.dumps(query_tag),
+            "query_id": statement_id or "",
+            "execution_time_sec": round(execution_time, 3),
+            "rows_produced": rows_produced,
+            "error_message": error_message or "",
+            "ctas_variant": operation,  # Store operation type ('delete' or 'insert')
         }
 
         # Log to DuckDB immediately

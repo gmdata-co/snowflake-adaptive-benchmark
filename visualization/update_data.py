@@ -28,11 +28,182 @@ SCENARIO_LABELS = {
     "coldstart": "5 Cold Start Queries",
     "concurrent": "22 Concurrent Queries",
     "ctas": "5 CTAS Queries",
+    "dml": "DML Refresh",
 }
 
 # Paths
 DB_PATH = project_root / "benchmark_results.duckdb"
 OUTPUT_PATH = Path(__file__).parent / "src" / "data" / "benchmarkData.json"
+
+
+def get_scenario_costs(conn: duckdb.DuckDBPyConnection) -> dict:
+    """Get total credits/dbus per scenario/tier for proportional cost allocation."""
+    query = """
+    SELECT
+        scenario,
+        warehouse_tier,
+        snow_total_credits,
+        dbx_total_dbus
+    FROM main.run_summary_agg
+    """
+    results = conn.execute(query).fetchall()
+
+    costs = {}
+    for row in results:
+        scenario, tier, snow_credits, dbx_dbus = row
+        key = f"{scenario}-{tier}"
+        costs[key] = {
+            "snow_credits": float(snow_credits) if snow_credits else 0,
+            "dbx_dbus": float(dbx_dbus) if dbx_dbus else 0,
+        }
+    logger.info(f"Loaded scenario costs for {len(costs)} scenario/tier combinations")
+    return costs
+
+
+def get_query_details_data(
+    conn: duckdb.DuckDBPyConnection, scenario_costs: dict
+) -> list[dict]:
+    """Query query_details view and return formatted data for visualization."""
+    query = """
+    SELECT
+        run_id,
+        scenario,
+        warehouse_tier,
+        query_num,
+        ctas_variant,
+        query_id_display,
+        query_type,
+        query_category,
+        query_description,
+        sql_snippet,
+        snow_warehouse_size,
+        snow_warehouse_name,
+        snow_execution_sec,
+        snow_rows_produced,
+        snow_error,
+        dbx_warehouse_size,
+        dbx_warehouse_name,
+        dbx_execution_sec,
+        dbx_rows_produced,
+        dbx_error,
+        snow_total_exec_time,
+        dbx_total_exec_time
+    FROM main.query_details
+    ORDER BY
+        CASE scenario
+            WHEN 'normal' THEN 1
+            WHEN 'coldstart' THEN 2
+            WHEN 'concurrent' THEN 3
+            WHEN 'ctas' THEN 4
+            ELSE 5
+        END,
+        warehouse_tier,
+        query_num,
+        ctas_variant
+    """
+
+    results = conn.execute(query).fetchall()
+    logger.info(f"Fetched {len(results)} rows from query_details")
+
+    details = []
+    for row in results:
+        (
+            run_id,
+            scenario,
+            warehouse_tier,
+            query_num,
+            ctas_variant,
+            query_id_display,
+            query_type,
+            query_category,
+            query_description,
+            sql_snippet,
+            snow_warehouse_size,
+            snow_warehouse_name,
+            snow_execution_sec,
+            snow_rows_produced,
+            snow_error,
+            dbx_warehouse_size,
+            dbx_warehouse_name,
+            dbx_execution_sec,
+            dbx_rows_produced,
+            dbx_error,
+            snow_total_exec_time,
+            dbx_total_exec_time,
+        ) = row
+
+        # Calculate proportional credits/dbus based on execution time share
+        cost_key = f"{scenario}-{warehouse_tier}"
+        costs = scenario_costs.get(cost_key, {})
+
+        # Snowflake proportional credits
+        snow_credits = None
+        if (
+            snow_execution_sec is not None
+            and snow_total_exec_time is not None
+            and snow_total_exec_time > 0
+        ):
+            proportion = float(snow_execution_sec) / float(snow_total_exec_time)
+            total_credits = costs.get("snow_credits", 0)
+            if total_credits > 0:
+                snow_credits = round(proportion * total_credits, 6)
+
+        # Databricks proportional dbus
+        dbx_dbus = None
+        if (
+            dbx_execution_sec is not None
+            and dbx_total_exec_time is not None
+            and dbx_total_exec_time > 0
+        ):
+            proportion = float(dbx_execution_sec) / float(dbx_total_exec_time)
+            total_dbus = costs.get("dbx_dbus", 0)
+            if total_dbus > 0:
+                dbx_dbus = round(proportion * total_dbus, 6)
+
+        detail = {
+            "id": f"{scenario}-{warehouse_tier}-{run_id}-{query_id_display}",
+            "runId": run_id,
+            "scenario": scenario,
+            "warehouseTier": warehouse_tier,
+            "queryNum": query_num,
+            "ctasVariant": ctas_variant,
+            "queryIdDisplay": query_id_display,
+            "queryType": query_type,
+            "queryCategory": query_category,
+            "queryDescription": query_description,
+            "sqlSnippet": sql_snippet,
+            "snowflake": {
+                "warehouseSize": snow_warehouse_size,
+                "warehouseName": snow_warehouse_name,
+                "executionSec": (
+                    round(float(snow_execution_sec), 2)
+                    if snow_execution_sec is not None
+                    else None
+                ),
+                "credits": snow_credits,
+                "rowsProduced": snow_rows_produced,
+                "error": snow_error if snow_error else None,
+            }
+            if snow_warehouse_size
+            else None,
+            "databricks": {
+                "warehouseSize": dbx_warehouse_size,
+                "warehouseName": dbx_warehouse_name,
+                "executionSec": (
+                    round(float(dbx_execution_sec), 2)
+                    if dbx_execution_sec is not None
+                    else None
+                ),
+                "dbus": dbx_dbus,
+                "rowsProduced": dbx_rows_produced,
+                "error": dbx_error if dbx_error else None,
+            }
+            if dbx_warehouse_size
+            else None,
+        }
+        details.append(detail)
+
+    return details
 
 
 def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
@@ -125,7 +296,11 @@ def update_visualization_data():
     conn = duckdb.connect(str(DB_PATH), read_only=True)
 
     try:
+        # Load scenario costs for proportional allocation
+        scenario_costs = get_scenario_costs(conn)
+
         comparisons = get_run_summary_data(conn)
+        query_details = get_query_details_data(conn, scenario_costs)
 
         if not comparisons:
             logger.warning("No data found in run_summary view")
@@ -133,6 +308,7 @@ def update_visualization_data():
 
         output = {
             "comparisons": comparisons,
+            "queryDetails": query_details,
             "exportedAt": datetime.now().isoformat(),
         }
 
@@ -142,7 +318,9 @@ def update_visualization_data():
         with open(OUTPUT_PATH, "w") as f:
             json.dump(output, f, indent=2)
 
-        logger.info(f"Exported {len(comparisons)} comparisons to {OUTPUT_PATH}")
+        logger.info(
+            f"Exported {len(comparisons)} comparisons and {len(query_details)} query details to {OUTPUT_PATH}"
+        )
 
     finally:
         conn.close()

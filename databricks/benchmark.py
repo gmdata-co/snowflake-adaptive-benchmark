@@ -623,6 +623,157 @@ class DatabricksBenchmark:
 
         logger.info("✅ Table cleanup complete")
 
+    def _setup_dml_table(self):
+        """
+        Set up the DML target table by dropping and re-cloning from source.
+
+        Uses SHALLOW CLONE for Delta Lake tables - a fast metadata operation.
+        Uses admin warehouse for setup, which is NOT counted in benchmark metrics.
+        """
+        from common.connections import DatabricksConnection
+        from .config import WAREHOUSES
+
+        logger.info("\n🔧 Setting up DML target table (not counted in metrics)...")
+
+        # Connect to admin warehouse for setup
+        admin_warehouse_id = WAREHOUSES["admin"]
+
+        # Create new connection for setup
+        setup_connection = DatabricksConnection(
+            host=DATABRICKS_HOST,
+            token=DATABRICKS_TOKEN,
+            warehouse_id=admin_warehouse_id,
+            catalog=CATALOG,
+            schema=SCHEMA,
+        )
+
+        try:
+            setup_connection.connect()
+            cursor = setup_connection.connection.cursor()
+
+            # Drop existing table to ensure clean state
+            cursor.execute(f"DROP TABLE IF EXISTS {CATALOG}.{SCHEMA}.lineitem_dml")
+            logger.info("   Dropped existing lineitem_dml table (if any)")
+
+            # Shallow clone from source - fast metadata operation for Delta tables
+            cursor.execute(f"""
+                CREATE TABLE {CATALOG}.{SCHEMA}.lineitem_dml
+                SHALLOW CLONE {CATALOG}.{SCHEMA}.lineitem
+            """)
+            logger.info("   Created fresh lineitem_dml clone from source")
+
+            cursor.close()
+
+        except Exception as e:
+            logger.error(f"   Failed to set up DML table: {e}")
+            raise
+        finally:
+            setup_connection.disconnect()
+
+        logger.info("✅ DML table setup complete")
+
+    def run_dml_benchmark(
+        self,
+        warehouse_sizes: list[str] = None,
+    ):
+        """
+        Run DML benchmark: Execute DELETE + INSERT operations on lineitem data.
+
+        Measures partition refresh performance by:
+        1. Deleting a monthly slice of data (June 1995, ~7.5M rows)
+        2. Re-inserting the same data from source
+
+        Args:
+            warehouse_sizes: List of warehouse sizes to test (default: ["small"])
+        """
+        scenario = "dml"
+        operations = ["delete", "insert"]
+
+        if warehouse_sizes is None:
+            warehouse_sizes = ["small"]
+
+        logger.info("=" * 70)
+        logger.info("DATABRICKS DML BENCHMARK")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info(f"Operations: {', '.join(operations)}")
+        logger.info("Target: June 1995 lineitem data (~7.5M rows)")
+        logger.info("=" * 70)
+
+        # Setup: Drop and re-clone table BEFORE warehouse creation (not counted in metrics)
+        self._setup_dml_table()
+
+        # Initialize warehouse manager
+        self.warehouse_manager = WarehouseManager(run_id=self.run_id)
+
+        # Create warehouses with scenario in name
+        warehouse_id_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario
+        )
+
+        try:
+            # Execute DML operations for each warehouse size
+            for warehouse_size in warehouse_sizes:
+                warehouse_id = warehouse_id_map[warehouse_size]
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] Starting DML benchmark on warehouse {warehouse_id}"
+                )
+
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="databricks",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_id,
+                )
+
+                # Connect to warehouse
+                self.connect(warehouse_id=warehouse_id)
+
+                try:
+                    # Execute DELETE and INSERT sequentially
+                    for operation in operations:
+                        logger.info(f"\n  [{warehouse_size.upper()}] Executing: {operation.upper()}")
+
+                        # Execute DML operation and record metrics
+                        self.query_executor.execute_dml_query(
+                            operation=operation,
+                            run_num=1,
+                            warehouse_id=warehouse_id,
+                            warehouse_size=warehouse_size.upper(),
+                            scenario=scenario,
+                        )
+
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] ✅ Completed DML operations on {warehouse_id}"
+                    )
+
+                finally:
+                    self.disconnect()
+
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="databricks",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
+
+        finally:
+            # Always clean up warehouses
+            self.warehouse_manager.destroy_all_warehouses()
+
+        logger.info("\n" + "=" * 70)
+        logger.info("DML BENCHMARK COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {DUCKDB_PATH}")
+        logger.info(f"Run ID: {self.run_id}")
+
     def run_benchmark(
         self,
         warehouse_sizes: list[str] = None,

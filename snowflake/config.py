@@ -29,6 +29,7 @@ WAREHOUSE_SIZE_MAP = {
     "2xlarge": "2XLARGE",
 }
 WAREHOUSE_PREFIX = os.getenv("SNOWFLAKE_WAREHOUSE_PREFIX")
+ADMIN_WAREHOUSE = os.getenv("SNOWFLAKE_ADMIN_WAREHOUSE", "COMPUTE_WH")
 
 # Warehouse settings for dynamic creation
 WAREHOUSE_AUTO_SUSPEND = 120  # 2 minutes

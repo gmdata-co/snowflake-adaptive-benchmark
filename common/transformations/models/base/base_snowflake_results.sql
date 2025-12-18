@@ -25,5 +25,6 @@ SELECT
     bytes_scanned,
     credits_used_compute,
     credits_used_cloud_services,
-    total_elapsed_time_ms
+    total_elapsed_time_ms,
+    ctas_variant
 FROM {{ source('main', 'snowflake_results') }}

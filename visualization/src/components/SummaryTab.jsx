@@ -218,31 +218,33 @@ function ScenarioHeader({ scenarioLabel, comparisons, hoveredTier, onHoverTier }
   );
 }
 
-function ScenarioSection({ scenarioLabel, comparisons }) {
+function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDetails }) {
   const [hoveredTier, setHoveredTier] = useState(null);
 
   const totals = useMemo(() => {
-    // Sum only values that exist (filter out nulls)
-    const snowTime = comparisons
+    // Filter to only "primary comparisons" - tiers where both platforms have data
+    // This excludes standalone tiers (e.g., Snowflake SMALL only, Databricks XLARGE only)
+    const primaryComparisons = comparisons.filter(
+      c => c.snowflake != null && c.databricks != null
+    );
+
+    // Sum only primary comparison values
+    const snowTime = primaryComparisons
       .filter(c => c.snowflake?.time != null)
       .reduce((sum, c) => sum + c.snowflake.time, 0);
-    const snowCost = comparisons
+    const snowCost = primaryComparisons
       .filter(c => c.snowflake?.cost != null)
       .reduce((sum, c) => sum + c.snowflake.cost, 0);
-    const dbxTime = comparisons
+    const dbxTime = primaryComparisons
       .filter(c => c.databricks?.time != null)
       .reduce((sum, c) => sum + c.databricks.time, 0);
-    const dbxCost = comparisons
+    const dbxCost = primaryComparisons
       .filter(c => c.databricks?.cost != null)
       .reduce((sum, c) => sum + c.databricks.cost, 0);
 
-    // Only include platform totals if there's data
-    const hasSnowflake = comparisons.some(c => c.snowflake != null);
-    const hasDatabricks = comparisons.some(c => c.databricks != null);
-
     return {
-      snowflake: hasSnowflake ? { time: snowTime, cost: snowCost } : null,
-      databricks: hasDatabricks ? { time: dbxTime, cost: dbxCost } : null,
+      snowflake: { time: snowTime, cost: snowCost },
+      databricks: { time: dbxTime, cost: dbxCost },
     };
   }, [comparisons]);
 
@@ -292,13 +294,48 @@ function ScenarioSection({ scenarioLabel, comparisons }) {
         hoveredTier={hoveredTier}
         onHoverTier={setHoveredTier}
       />
+
+      {/* View Details Button */}
+      {onNavigateToDetails && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}>
+          <button
+            onClick={() => onNavigateToDetails(scenario, hoveredTier)}
+            style={{
+              backgroundColor: "transparent",
+              border: "1px solid #475569",
+              borderRadius: "6px",
+              padding: "6px 14px",
+              color: "#94a3b8",
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.borderColor = "#64748b";
+              e.target.style.color = "#e2e8f0";
+              e.target.style.backgroundColor = "#334155";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.borderColor = "#475569";
+              e.target.style.color = "#94a3b8";
+              e.target.style.backgroundColor = "transparent";
+            }}
+          >
+            View Query Details
+            <span style={{ fontSize: "14px" }}>&rarr;</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 // TableOfContents moved to App.jsx as HamburgerMenu
 
-export function SummaryTab({ snowCreditPrice, dbxDbuPrice }) {
+export function SummaryTab({ snowCreditPrice, dbxDbuPrice, onNavigateToDetails }) {
   const rawComparisons = benchmarkData.comparisons;
 
   // Recalculate costs based on user-specified prices
@@ -316,14 +353,15 @@ export function SummaryTab({ snowCreditPrice, dbxDbuPrice }) {
     }));
   }, [rawComparisons, snowCreditPrice, dbxDbuPrice]);
 
-  // Group comparisons by scenario - order: sequential, concurrent, cold, ctas
+  // Group comparisons by scenario - order: sequential, concurrent, cold, ctas, dml
   const groupedByScenario = useMemo(() => {
-    const scenarios = ['normal', 'concurrent', 'coldstart', 'ctas'];
+    const scenarios = ['normal', 'concurrent', 'coldstart', 'ctas', 'dml'];
     const scenarioLabels = {
       normal: '22 Sequential Queries',
       concurrent: '22 Concurrent Queries',
       coldstart: '5 Cold Start Queries',
       ctas: '5 CTAS Queries',
+      dml: 'DML Refresh',
     };
 
     return scenarios.map(scenario => ({
@@ -340,8 +378,10 @@ export function SummaryTab({ snowCreditPrice, dbxDbuPrice }) {
       {groupedByScenario.map(({ scenario, scenarioLabel, comparisons }) => (
         <div key={scenario} id={`scenario-${scenario}`}>
           <ScenarioSection
+            scenario={scenario}
             scenarioLabel={scenarioLabel}
             comparisons={comparisons}
+            onNavigateToDetails={onNavigateToDetails}
           />
         </div>
       ))}
