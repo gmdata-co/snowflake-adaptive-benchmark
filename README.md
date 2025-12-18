@@ -335,6 +335,44 @@ Use [DBeaver](https://dbeaver.io/) for interactive querying and visualization:
 
 See [common/transformations/README.md](common/transformations/README.md) for detailed documentation on the analysis views.
 
+### 6. Visualize Results (Interactive Dashboard)
+
+After running benchmarks and enriching data, you can launch an interactive React dashboard to explore and compare results visually.
+
+#### Generate Visualization Data
+
+Export the latest results from DuckDB to JSON format:
+
+```bash
+uv run visualization/update_data.py
+```
+
+This script:
+- Queries the `run_summary_agg` and `query_details` dbt views
+- Exports formatted data to `visualization/src/data/benchmarkData.json`
+- Includes scenario summaries and per-query details with proportional cost allocation
+
+#### Launch the Dashboard
+
+Install dependencies and start the development server:
+
+```bash
+cd visualization
+npm install
+npm run dev
+```
+
+The dashboard will open at `http://localhost:5173` (or another port if 5173 is in use).
+
+**Features:**
+- Interactive comparison charts for all scenarios
+- Query-level performance breakdowns
+- Cost comparisons (Snowflake credits vs Databricks DBUs)
+- Filterable by scenario and warehouse tier
+- Responsive design with detailed tooltips
+
+**Note:** The dashboard uses static JSON data. Re-run `uv run visualization/update_data.py` whenever you want to refresh with new benchmark results.
+
 ## Requirements
 
 - Python 3.x with `uv` package manager
