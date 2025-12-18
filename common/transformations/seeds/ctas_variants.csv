@@ -1,6 +1,115 @@
-ctas_variant,variant_description,variant_details,sql_snippet
-narrow_tall,Narrow Tall,~6B rows x 4 columns - pure write throughput,"SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice FROM LINEITEM"
-standard_tall,Standard Tall,~6B rows x 16 columns - full table copy,"SELECT * FROM LINEITEM"
-medium_wide,Medium Wide,~1.5B rows x 24 columns - orders + customer dimensions,"SELECT o.*, c.*, n.*, r.* FROM ORDERS o JOIN CUSTOMER c JOIN NATION n JOIN REGION r"
-very_wide,Very Wide,~6B rows x 59 columns - fully denormalized fact table,"SELECT l.*, o.*, c.*, p.*, s.*, ps.*, cn.*, sn.*, cr.*, sr.* FROM LINEITEM l JOIN... (9 tables)"
-filtered,Filtered,~2B rows x 16 columns - filtered write subset,"SELECT * FROM LINEITEM WHERE l_shipdate >= '1995-01-01'"
+"ctas_variant","variant_description","variant_details","sql_snippet","full_sql"
+"narrow_tall","Narrow Tall","~6B rows x 4 columns - pure write throughput","SELECT l_orderkey, l_partkey, l_quantity, l_extendedprice FROM LINEITEM","SELECT
+    l_orderkey,
+    l_partkey,
+    l_quantity,
+    l_extendedprice
+FROM lineitem;"
+"standard_tall","Standard Tall","~6B rows x 16 columns - full table copy","SELECT * FROM LINEITEM","SELECT *
+FROM lineitem;"
+"medium_wide","Medium Wide","~1.5B rows x 24 columns - orders + customer dimensions","SELECT o.*, c.*, n.*, r.* FROM ORDERS o JOIN CUSTOMER c JOIN NATION n JOIN REGION r","SELECT
+    -- Orders columns
+    o.o_orderkey,
+    o.o_custkey,
+    o.o_orderstatus,
+    o.o_totalprice,
+    o.o_orderdate,
+    o.o_orderpriority,
+    o.o_clerk,
+    o.o_shippriority,
+    o.o_comment,
+    -- Customer columns
+    c.c_custkey AS c_custkey_dup,
+    c.c_name,
+    c.c_address,
+    c.c_nationkey,
+    c.c_phone,
+    c.c_acctbal,
+    c.c_mktsegment,
+    c.c_comment,
+    -- Nation columns
+    n.n_nationkey,
+    n.n_name,
+    n.n_regionkey,
+    n.n_comment,
+    -- Region columns
+    r.r_regionkey AS r_regionkey_dup,
+    r.r_name,
+    r.r_comment
+FROM orders o
+JOIN customer c ON o.o_custkey = c.c_custkey
+JOIN nation n ON c.c_nationkey = n.n_nationkey
+JOIN region r ON n.n_regionkey = r.r_regionkey;"
+"very_wide","Very Wide","~6B rows x 59 columns - fully denormalized fact table","SELECT l.*, o.*, c.*, p.*, s.*, ps.*, cn.*, sn.*, cr.*, sr.* FROM LINEITEM l JOIN... (9 tables)","SELECT
+    -- Lineitem (fact table)
+    l.l_orderkey,
+    l.l_partkey,
+    l.l_suppkey,
+    l.l_linenumber,
+    l.l_quantity,
+    l.l_extendedprice,
+    l.l_discount,
+    l.l_tax,
+    l.l_returnflag,
+    l.l_linestatus,
+    l.l_shipdate,
+    l.l_commitdate,
+    l.l_receiptdate,
+    l.l_shipinstruct,
+    l.l_shipmode,
+    l.l_comment AS l_comment,
+    -- Orders
+    o.o_orderstatus,
+    o.o_totalprice,
+    o.o_orderdate,
+    o.o_orderpriority,
+    o.o_clerk,
+    o.o_shippriority,
+    o.o_comment AS o_comment,
+    -- Customer
+    c.c_name,
+    c.c_address AS c_address,
+    c.c_phone AS c_phone,
+    c.c_acctbal AS c_acctbal,
+    c.c_mktsegment,
+    c.c_comment AS c_comment,
+    -- Part
+    p.p_name,
+    p.p_mfgr,
+    p.p_brand,
+    p.p_type,
+    p.p_size,
+    p.p_container,
+    p.p_retailprice,
+    p.p_comment AS p_comment,
+    -- Supplier
+    s.s_name,
+    s.s_address AS s_address,
+    s.s_phone AS s_phone,
+    s.s_acctbal AS s_acctbal,
+    s.s_comment AS s_comment,
+    -- PartSupp
+    ps.ps_availqty,
+    ps.ps_supplycost,
+    ps.ps_comment AS ps_comment,
+    -- Customer Nation
+    cn.n_name AS customer_nation,
+    -- Supplier Nation
+    sn.n_name AS supplier_nation,
+    -- Customer Region
+    cr.r_name AS customer_region,
+    -- Supplier Region
+    sr.r_name AS supplier_region
+FROM lineitem l
+JOIN orders o ON l.l_orderkey = o.o_orderkey
+JOIN customer c ON o.o_custkey = c.c_custkey
+JOIN part p ON l.l_partkey = p.p_partkey
+JOIN supplier s ON l.l_suppkey = s.s_suppkey
+JOIN partsupp ps ON l.l_partkey = ps.ps_partkey AND l.l_suppkey = ps.ps_suppkey
+JOIN nation cn ON c.c_nationkey = cn.n_nationkey
+JOIN nation sn ON s.s_nationkey = sn.n_nationkey
+JOIN region cr ON cn.n_regionkey = cr.r_regionkey
+JOIN region sr ON sn.n_regionkey = sr.r_regionkey;"
+"filtered","Filtered","~2B rows x 16 columns - filtered write subset","SELECT * FROM LINEITEM WHERE l_shipdate >= '1995-01-01'","SELECT *
+FROM lineitem
+WHERE l_shipdate >= '1995-01-01';"

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { SnowflakeLogo } from "./SnowflakeLogo";
 import { DatabricksLogo } from "./DatabricksLogo";
 import { QueryCategoryBadge } from "./QueryCategoryBadge";
+import { SqlModal } from "./SqlModal";
 
 const headerStyle = {
   padding: "12px 8px",
@@ -22,15 +23,15 @@ const cellStyle = {
 };
 
 function SortIcon({ direction }) {
-  if (!direction) return <span style={{ opacity: 0.3, marginLeft: "4px" }}>&#8597;</span>;
+  if (!direction) return <span style={{ opacity: 0.3, marginLeft: "4px" }}>↕</span>;
   return (
     <span style={{ marginLeft: "4px" }}>
-      {direction === "asc" ? "&#9650;" : "&#9660;"}
+      {direction === "asc" ? "▲" : "▼"}
     </span>
   );
 }
 
-function QueryDetailsRow({ row }) {
+function QueryDetailsRow({ row, onSqlClick }) {
   const snowSec = row.snowflake?.executionSec;
   const dbxSec = row.databricks?.executionSec;
   const snowCost = row.snowflake?.cost;
@@ -38,19 +39,35 @@ function QueryDetailsRow({ row }) {
   const snowSize = row.snowflake?.warehouseSize;
   const dbxSize = row.databricks?.warehouseSize;
 
-  // Calculate winner and difference
-  let diffText = "-";
-  let diffColor = "#9ca3af";
+  // Calculate time difference
+  let timeDiffText = "-";
+  let timeDiffColor = "#9ca3af";
   if (snowSec != null && dbxSec != null) {
     const diff = snowSec - dbxSec;
     if (Math.abs(diff) < 0.01) {
-      diffText = "Tie";
+      timeDiffText = "Tie";
     } else if (diff < 0) {
-      diffText = `Snow ${Math.abs(diff).toFixed(1)}s faster`;
-      diffColor = "#29B5E8";
+      timeDiffText = `Snow ${Math.abs(diff).toFixed(1)}s faster`;
+      timeDiffColor = "#29B5E8";
     } else {
-      diffText = `DBX ${diff.toFixed(1)}s faster`;
-      diffColor = "#FF3621";
+      timeDiffText = `DBX ${diff.toFixed(1)}s faster`;
+      timeDiffColor = "#FF3621";
+    }
+  }
+
+  // Calculate cost difference
+  let costDiffText = "-";
+  let costDiffColor = "#9ca3af";
+  if (snowCost != null && dbxCost != null) {
+    const diff = snowCost - dbxCost;
+    if (Math.abs(diff) < 0.001) {
+      costDiffText = "Tie";
+    } else if (diff < 0) {
+      costDiffText = `Snow $${Math.abs(diff).toFixed(3)} cheaper`;
+      costDiffColor = "#29B5E8";
+    } else {
+      costDiffText = `DBX $${diff.toFixed(3)} cheaper`;
+      costDiffColor = "#FF3621";
     }
   }
 
@@ -111,13 +128,41 @@ function QueryDetailsRow({ row }) {
         </span>
       </td>
       <td style={cellStyle}>
-        <span style={{ color: diffColor, fontSize: "12px" }}>{diffText}</span>
+        <span style={{ color: timeDiffColor, fontSize: "12px" }}>{timeDiffText}</span>
       </td>
-      <td style={{ ...cellStyle, color: "#94a3b8", fontSize: "12px", maxWidth: "200px" }}>
-        <span title={row.queryDescription}>{truncate(row.queryDescription, 40)}</span>
+      <td style={cellStyle}>
+        <span style={{ color: costDiffColor, fontSize: "12px" }}>{costDiffText}</span>
       </td>
-      <td style={{ ...cellStyle, color: "#64748b", fontSize: "11px", maxWidth: "200px", fontFamily: "monospace" }}>
-        <span title={row.sqlSnippet}>{truncate(row.sqlSnippet, 50)}</span>
+      <td style={{ ...cellStyle, color: "#94a3b8", fontSize: "12px", maxWidth: "180px" }}>
+        <span title={row.queryDescription}>{truncate(row.queryDescription, 35)}</span>
+      </td>
+      <td style={{ ...cellStyle, maxWidth: "150px" }}>
+        <button
+          onClick={() => onSqlClick(row)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#64748b",
+            fontSize: "11px",
+            fontFamily: "monospace",
+            cursor: "pointer",
+            padding: "2px 4px",
+            borderRadius: "4px",
+            textAlign: "left",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.backgroundColor = "#334155";
+            e.target.style.color = "#94a3b8";
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.backgroundColor = "transparent";
+            e.target.style.color = "#64748b";
+          }}
+          title="Click to view full SQL"
+        >
+          {truncate(row.sqlSnippet, 40)}
+        </button>
       </td>
     </tr>
   );
@@ -126,6 +171,7 @@ function QueryDetailsRow({ row }) {
 export function QueryDetailsTable({ data }) {
   const [sortColumn, setSortColumn] = useState("queryIdDisplay");
   const [sortDirection, setSortDirection] = useState("asc");
+  const [selectedQuery, setSelectedQuery] = useState(null);
 
   const sortedData = [...data].sort((a, b) => {
     let aVal, bVal;
@@ -152,9 +198,13 @@ export function QueryDetailsTable({ data }) {
         aVal = a.databricks?.cost ?? Infinity;
         bVal = b.databricks?.cost ?? Infinity;
         break;
-      case "diff":
+      case "timeDiff":
         aVal = (a.snowflake?.executionSec ?? 0) - (a.databricks?.executionSec ?? 0);
         bVal = (b.snowflake?.executionSec ?? 0) - (b.databricks?.executionSec ?? 0);
+        break;
+      case "costDiff":
+        aVal = (a.snowflake?.cost ?? 0) - (a.databricks?.cost ?? 0);
+        bVal = (b.snowflake?.cost ?? 0) - (b.databricks?.cost ?? 0);
         break;
       case "queryCategory":
         aVal = a.queryCategory || "";
@@ -193,7 +243,7 @@ export function QueryDetailsTable({ data }) {
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <table style={{ width: "100%", minWidth: "1200px", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ borderBottom: "1px solid #334155" }}>
             <th {...getHeaderProps("queryIdDisplay")}>
@@ -228,9 +278,13 @@ export function QueryDetailsTable({ data }) {
               </span>
               <SortIcon direction={sortColumn === "dbxCost" ? sortDirection : null} />
             </th>
-            <th {...getHeaderProps("diff")}>
-              Difference
-              <SortIcon direction={sortColumn === "diff" ? sortDirection : null} />
+            <th {...getHeaderProps("timeDiff")}>
+              Time Diff
+              <SortIcon direction={sortColumn === "timeDiff" ? sortDirection : null} />
+            </th>
+            <th {...getHeaderProps("costDiff")}>
+              Cost Diff
+              <SortIcon direction={sortColumn === "costDiff" ? sortDirection : null} />
             </th>
             <th style={{ ...headerStyle, cursor: "default" }}>Description</th>
             <th style={{ ...headerStyle, cursor: "default" }}>SQL</th>
@@ -238,7 +292,7 @@ export function QueryDetailsTable({ data }) {
         </thead>
         <tbody>
           {sortedData.map((row) => (
-            <QueryDetailsRow key={row.id} row={row} />
+            <QueryDetailsRow key={row.id} row={row} onSqlClick={setSelectedQuery} />
           ))}
         </tbody>
       </table>
@@ -246,6 +300,9 @@ export function QueryDetailsTable({ data }) {
         <div style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>
           No queries match the current filters
         </div>
+      )}
+      {selectedQuery && (
+        <SqlModal query={selectedQuery} onClose={() => setSelectedQuery(null)} />
       )}
     </div>
   );

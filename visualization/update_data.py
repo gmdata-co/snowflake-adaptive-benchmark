@@ -76,6 +76,7 @@ def get_query_details_data(
         query_category,
         query_description,
         sql_snippet,
+        full_sql,
         snow_warehouse_size,
         snow_warehouse_name,
         snow_execution_sec,
@@ -118,6 +119,7 @@ def get_query_details_data(
             query_category,
             query_description,
             sql_snippet,
+            full_sql,
             snow_warehouse_size,
             snow_warehouse_name,
             snow_execution_sec,
@@ -172,6 +174,7 @@ def get_query_details_data(
             "queryCategory": query_category,
             "queryDescription": query_description,
             "sqlSnippet": sql_snippet,
+            "fullSql": full_sql,
             "snowflake": {
                 "warehouseSize": snow_warehouse_size,
                 "warehouseName": snow_warehouse_name,

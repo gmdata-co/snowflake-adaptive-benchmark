@@ -93,6 +93,9 @@ function HamburgerMenu({ isOpen, onToggle, scenarios, onSelectScenario }) {
 }
 
 function HeaderPricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, onDbxPriceChange }) {
+  const [snowInputValue, setSnowInputValue] = useState(String(snowCreditPrice));
+  const [dbxInputValue, setDbxInputValue] = useState(String(dbxDbuPrice));
+
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '48px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px', whiteSpace: 'nowrap' }}>
@@ -101,11 +104,16 @@ function HeaderPricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, 
         <input
           type="text"
           inputMode="decimal"
-          value={snowCreditPrice}
+          value={snowInputValue}
           onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
-              onSnowPriceChange(isNaN(val) ? 0 : val);
+            const text = e.target.value;
+            // Allow empty, digits, and one decimal point
+            if (/^[0-9]*\.?[0-9]*$/.test(text)) {
+              setSnowInputValue(text);
+              const val = parseFloat(text);
+              if (!isNaN(val)) {
+                onSnowPriceChange(val);
+              }
             }
           }}
           style={{
@@ -130,11 +138,16 @@ function HeaderPricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, 
         <input
           type="text"
           inputMode="decimal"
-          value={dbxDbuPrice}
+          value={dbxInputValue}
           onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
-              onDbxPriceChange(isNaN(val) ? 0 : val);
+            const text = e.target.value;
+            // Allow empty, digits, and one decimal point
+            if (/^[0-9]*\.?[0-9]*$/.test(text)) {
+              setDbxInputValue(text);
+              const val = parseFloat(text);
+              if (!isNaN(val)) {
+                onDbxPriceChange(val);
+              }
             }
           }}
           style={{

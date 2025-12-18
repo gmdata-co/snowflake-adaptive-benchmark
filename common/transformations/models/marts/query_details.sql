@@ -163,6 +163,15 @@ combined AS (
             ELSE COALESCE(qc.sql_snippet, '')
         END AS sql_snippet,
 
+        -- Full SQL from seeds
+        CASE
+            WHEN COALESCE(s.scenario, d.scenario) = 'dml'
+                THEN COALESCE(dv.full_sql, '')
+            WHEN COALESCE(s.ctas_variant, d.ctas_variant) IS NOT NULL
+                THEN COALESCE(cv.full_sql, '')
+            ELSE COALESCE(qc.full_sql, '')
+        END AS full_sql,
+
         -- Snowflake metrics
         s.warehouse_size AS snow_warehouse_size,
         s.warehouse_name AS snow_warehouse_name,

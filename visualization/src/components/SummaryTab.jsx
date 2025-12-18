@@ -151,7 +151,7 @@ function SummaryCostTile({ totals, hoveredComparison }) {
   );
 }
 
-function ScenarioHeader({ scenarioLabel, comparisons, hoveredTier, onHoverTier }) {
+function ScenarioHeader({ scenarioLabel, comparisons, hoveredTier, onHoverTier, showOutlierToggle, excludeOutlier, onToggleOutlier }) {
   return (
     <div style={{
       display: 'flex',
@@ -164,14 +164,54 @@ function ScenarioHeader({ scenarioLabel, comparisons, hoveredTier, onHoverTier }
       gap: '12px',
     }}>
       {/* Scenario Title */}
-      <h2 style={{
-        fontSize: '1.5rem',
-        fontWeight: '700',
-        color: 'white',
-        margin: 0,
-      }}>
-        {scenarioLabel}
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <h2 style={{
+          fontSize: '1.5rem',
+          fontWeight: '700',
+          color: 'white',
+          margin: 0,
+        }}>
+          {scenarioLabel}
+        </h2>
+
+        {/* Outlier Toggle - only shown for CTAS */}
+        {showOutlierToggle && (
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            color: excludeOutlier ? '#e2e8f0' : '#64748b',
+            transition: 'color 0.2s',
+          }}>
+            <div
+              onClick={() => onToggleOutlier(!excludeOutlier)}
+              style={{
+                width: '36px',
+                height: '20px',
+                backgroundColor: excludeOutlier ? '#29B5E8' : '#475569',
+                borderRadius: '10px',
+                position: 'relative',
+                transition: 'background-color 0.2s',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                width: '16px',
+                height: '16px',
+                backgroundColor: 'white',
+                borderRadius: '50%',
+                position: 'absolute',
+                top: '2px',
+                left: excludeOutlier ? '18px' : '2px',
+                transition: 'left 0.2s',
+              }} />
+            </div>
+            Exclude Outlier (Very Wide)
+          </label>
+        )}
+      </div>
 
       {/* Warehouse Tier Pills */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap', marginRight: '85px' }}>
@@ -218,13 +258,69 @@ function ScenarioHeader({ scenarioLabel, comparisons, hoveredTier, onHoverTier }
   );
 }
 
-function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDetails }) {
+function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDetails, showOutlierToggle, queryDetails, snowCreditPrice, dbxDbuPrice }) {
   const [hoveredTier, setHoveredTier] = useState(null);
+  const [excludeOutlier, setExcludeOutlier] = useState(false);
+
+  // When excludeOutlier is true, recalculate comparisons from queryDetails
+  const effectiveComparisons = useMemo(() => {
+    if (!excludeOutlier || !queryDetails || queryDetails.length === 0) {
+      return comparisons;
+    }
+
+    // Filter out VERY_WIDE queries
+    const filteredDetails = queryDetails.filter(
+      q => q.scenario === scenario && q.queryIdDisplay !== 'VERY_WIDE'
+    );
+
+    // Group by warehouseTier and aggregate
+    const tierGroups = {};
+    filteredDetails.forEach(q => {
+      const tier = q.warehouseTier;
+      if (!tierGroups[tier]) {
+        tierGroups[tier] = {
+          snowflake: { time: 0, credits: 0, size: null },
+          databricks: { time: 0, dbus: 0, size: null },
+        };
+      }
+      if (q.snowflake?.executionSec != null) {
+        tierGroups[tier].snowflake.time += q.snowflake.executionSec;
+        tierGroups[tier].snowflake.credits += q.snowflake.credits || 0;
+        tierGroups[tier].snowflake.size = q.snowflake.warehouseSize;
+      }
+      if (q.databricks?.executionSec != null) {
+        tierGroups[tier].databricks.time += q.databricks.executionSec;
+        tierGroups[tier].databricks.dbus += q.databricks.dbus || 0;
+        tierGroups[tier].databricks.size = q.databricks.warehouseSize;
+      }
+    });
+
+    // Convert to comparisons format
+    return Object.entries(tierGroups).map(([tier, data]) => ({
+      id: `${scenario}-${tier}-filtered`,
+      scenario,
+      warehouseTier: parseInt(tier),
+      snowflake: data.snowflake.size ? {
+        size: data.snowflake.size,
+        label: `Snowflake ${data.snowflake.size}`,
+        time: data.snowflake.time,
+        credits: data.snowflake.credits,
+        cost: data.snowflake.credits * snowCreditPrice,
+      } : null,
+      databricks: data.databricks.size ? {
+        size: data.databricks.size,
+        label: `Databricks ${data.databricks.size}`,
+        time: data.databricks.time,
+        dbus: data.databricks.dbus,
+        cost: data.databricks.dbus * dbxDbuPrice,
+      } : null,
+    })).sort((a, b) => a.warehouseTier - b.warehouseTier);
+  }, [excludeOutlier, queryDetails, comparisons, scenario, snowCreditPrice, dbxDbuPrice]);
 
   const totals = useMemo(() => {
     // Filter to only "primary comparisons" - tiers where both platforms have data
     // This excludes standalone tiers (e.g., Snowflake SMALL only, Databricks XLARGE only)
-    const primaryComparisons = comparisons.filter(
+    const primaryComparisons = effectiveComparisons.filter(
       c => c.snowflake != null && c.databricks != null
     );
 
@@ -246,10 +342,10 @@ function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDet
       snowflake: { time: snowTime, cost: snowCost },
       databricks: { time: dbxTime, cost: dbxCost },
     };
-  }, [comparisons]);
+  }, [effectiveComparisons]);
 
   const hoveredComparison = hoveredTier !== null
-    ? comparisons.find(c => c.warehouseTier === hoveredTier)
+    ? effectiveComparisons.find(c => c.warehouseTier === hoveredTier)
     : null;
 
   // Calculate maxTime handling null values
@@ -277,9 +373,12 @@ function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDet
       {/* Header with title and warehouse tiers */}
       <ScenarioHeader
         scenarioLabel={scenarioLabel}
-        comparisons={comparisons}
+        comparisons={effectiveComparisons}
         hoveredTier={hoveredTier}
         onHoverTier={setHoveredTier}
+        showOutlierToggle={showOutlierToggle}
+        excludeOutlier={excludeOutlier}
+        onToggleOutlier={setExcludeOutlier}
       />
 
       {/* KPI Tiles Row - Above Chart, aligned with chart plot area */}
@@ -290,7 +389,7 @@ function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDet
 
       {/* Chart - Full Width */}
       <ScenarioSummaryChart
-        scenarioData={comparisons}
+        scenarioData={effectiveComparisons}
         hoveredTier={hoveredTier}
         onHoverTier={setHoveredTier}
       />
@@ -337,6 +436,7 @@ function ScenarioSection({ scenario, scenarioLabel, comparisons, onNavigateToDet
 
 export function SummaryTab({ snowCreditPrice, dbxDbuPrice, onNavigateToDetails }) {
   const rawComparisons = benchmarkData.comparisons;
+  const queryDetails = benchmarkData.queryDetails || [];
 
   // Recalculate costs based on user-specified prices
   const comparisons = useMemo(() => {
@@ -382,6 +482,10 @@ export function SummaryTab({ snowCreditPrice, dbxDbuPrice, onNavigateToDetails }
             scenarioLabel={scenarioLabel}
             comparisons={comparisons}
             onNavigateToDetails={onNavigateToDetails}
+            showOutlierToggle={scenario === 'ctas'}
+            queryDetails={queryDetails}
+            snowCreditPrice={snowCreditPrice}
+            dbxDbuPrice={dbxDbuPrice}
           />
         </div>
       ))}

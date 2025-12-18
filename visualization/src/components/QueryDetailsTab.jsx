@@ -198,7 +198,7 @@ export function QueryDetailsTab({ initialScenario, initialTier, snowCreditPrice,
           onChange={setSelectedCategories}
         />
         <MultiSelectFilter
-          label="Query ID"
+          label="Query Name"
           options={availableQueryIds}
           selected={selectedQueryIds}
           onChange={setSelectedQueryIds}
