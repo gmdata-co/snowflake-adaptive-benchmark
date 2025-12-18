@@ -6,9 +6,11 @@
 
 -- Pivoted run metadata with wall clock times, costs by platform and warehouse size
 -- Uses warehouse_tier for cross-platform comparison:
+--   Tier 0: Snowflake Small (standalone)
 --   Tier 1: DBX Small  | Snowflake Medium
 --   Tier 2: DBX Medium | Snowflake Large
 --   Tier 3: DBX Large  | Snowflake XLarge
+--   Tier 4: DBX XLarge (standalone)
 
 WITH
 -- Snowflake run metadata with tier mapping
@@ -19,12 +21,13 @@ snowflake_metadata AS (
         warehouse_size,
         warehouse_name,
         total_wall_clock_seconds,
-        -- Map to tier: MEDIUM=1, LARGE=2, XLARGE=3
+        -- Map to tier: SMALL=0, MEDIUM=1, LARGE=2, XLARGE=3
         CASE warehouse_size
+            WHEN 'SMALL' THEN 0
             WHEN 'MEDIUM' THEN 1
             WHEN 'LARGE' THEN 2
             WHEN 'XLARGE' THEN 3
-            ELSE 0
+            ELSE -1  -- Unknown sizes
         END AS warehouse_tier
     FROM {{ source('main', 'run_metadata') }}
     WHERE platform = 'snowflake'
@@ -41,12 +44,13 @@ databricks_metadata AS (
         warehouse_size,
         warehouse_name,
         total_wall_clock_seconds,
-        -- Map to tier: SMALL=1, MEDIUM=2, LARGE=3
+        -- Map to tier: SMALL=1, MEDIUM=2, LARGE=3, XLARGE=4
         CASE warehouse_size
             WHEN 'SMALL' THEN 1
             WHEN 'MEDIUM' THEN 2
             WHEN 'LARGE' THEN 3
-            ELSE 0
+            WHEN 'XLARGE' THEN 4
+            ELSE -1  -- Unknown sizes
         END AS warehouse_tier
     FROM {{ source('main', 'run_metadata') }}
     WHERE platform = 'databricks'

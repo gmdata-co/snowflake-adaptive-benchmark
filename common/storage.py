@@ -146,6 +146,7 @@ class BenchmarkStorage:
                     execution_time_sec DOUBLE,
                     rows_produced BIGINT,
                     error_message VARCHAR,
+                    ctas_variant VARCHAR,
                     -- Enriched columns (populated later by enrich_results.py)
                     compilation_time_ms DOUBLE,
                     queued_time_ms DOUBLE,
@@ -173,6 +174,7 @@ class BenchmarkStorage:
                     execution_time_sec DOUBLE,
                     rows_produced BIGINT,
                     error_message VARCHAR,
+                    ctas_variant VARCHAR,
                     -- Enriched columns (populated later if needed)
                     compilation_time_ms DOUBLE,
                     queued_time_ms DOUBLE,
@@ -218,8 +220,8 @@ class BenchmarkStorage:
                     run_id, timestamp, platform, scenario,
                     warehouse_name, warehouse_size, query_num, run_num,
                     run_type, query_tag, query_id, execution_time_sec,
-                    rows_produced, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    rows_produced, error_message, ctas_variant
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 result.get("run_id"),
                 result.get("timestamp"),
@@ -235,6 +237,7 @@ class BenchmarkStorage:
                 result.get("execution_time_sec"),
                 result.get("rows_produced"),
                 result.get("error_message"),
+                result.get("ctas_variant", None),
             ])
             return None
 
@@ -255,8 +258,8 @@ class BenchmarkStorage:
                     run_id, timestamp, platform, scenario,
                     warehouse_name, warehouse_size, query_num, run_num,
                     run_type, query_tag, query_id, execution_time_sec,
-                    rows_produced, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    rows_produced, error_message, ctas_variant
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 result.get("run_id"),
                 result.get("timestamp"),
@@ -272,6 +275,7 @@ class BenchmarkStorage:
                 result.get("execution_time_sec"),
                 result.get("rows_produced"),
                 result.get("error_message"),
+                result.get("ctas_variant", None),
             ])
             return None
 

@@ -147,6 +147,57 @@ class QueryExecutor:
 
         return query_sql
 
+    def load_ctas_query_variant(self, variant: str) -> str:
+        """
+        Load a specific CTAS variant query from file.
+
+        Args:
+            variant: Variant name (narrow_tall, standard_tall, medium_wide,
+                    very_wide, filtered)
+
+        Returns:
+            Query SQL string with scale factor substituted
+
+        Raises:
+            FileNotFoundError: If variant query file doesn't exist
+        """
+        query_file = QUERIES_DIR / f"ctas_{variant}.sql"
+        if not query_file.exists():
+            raise FileNotFoundError(f"CTAS variant query file not found: {query_file}")
+
+        with open(query_file, "r") as f:
+            query_sql = f.read().strip()
+
+        # Replace the scale factor (e.g., TPCH_SF100 -> TPCH_SF1000)
+        query_sql = query_sql.replace("TPCH_SF100", f"TPCH_SF{self.scale_factor}")
+
+        return query_sql
+
+    def load_dml_query(self, operation: str) -> str:
+        """
+        Load a DML query (delete or insert) from file.
+
+        Args:
+            operation: Operation name ('delete' or 'insert')
+
+        Returns:
+            Query SQL string with scale factor substituted
+
+        Raises:
+            FileNotFoundError: If DML query file doesn't exist
+        """
+        query_file = QUERIES_DIR / f"dml_{operation}.sql"
+        if not query_file.exists():
+            raise FileNotFoundError(f"DML query file not found: {query_file}")
+
+        with open(query_file, "r") as f:
+            query_sql = f.read().strip()
+
+        # Replace the scale factor (e.g., TPCH_SF100 -> TPCH_SF1000)
+        query_sql = query_sql.replace("TPCH_SF100", f"TPCH_SF{self.scale_factor}")
+
+        return query_sql
+
     def set_query_tag(self, query_tag: Dict[str, Any]):
         """
         Set the query tag for the next query.
@@ -318,6 +369,7 @@ class QueryExecutor:
         force_run_type: Optional[str] = None,
         query_sql: Optional[str] = None,
         table_name: Optional[str] = None,
+        ctas_variant: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute a TPC-H query as CREATE TABLE AS SELECT.
@@ -334,6 +386,7 @@ class QueryExecutor:
             force_run_type: Optional override for run type detection
             query_sql: Optional pre-loaded query SQL (if None, loads from q{query_num}.sql)
             table_name: Optional custom table name (if None, uses BENCHMARK_CTAS_Q{query_num}_{run_id})
+            ctas_variant: Optional variant name for CTAS benchmarks (narrow_tall, standard_tall, etc.)
 
         Returns:
             Dictionary with query execution metrics
@@ -342,7 +395,7 @@ class QueryExecutor:
         run_type = self.determine_run_type(query_num, warehouse_name, force_run_type)
 
         # Create JSON structured query tag
-        workload_id = "ctas" if query_num == 0 else f"q{query_num:02d}"
+        workload_id = ctas_variant if ctas_variant else ("ctas" if query_num == 0 else f"q{query_num:02d}")
         query_tag = {
             "app": APP_NAME,
             "workload_id": workload_id,
@@ -353,7 +406,7 @@ class QueryExecutor:
         # Include warehouse size in log output for clarity
         platform_prefix = "[SNOWFLAKE]"
         wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
-        query_label = "CTAS" if query_num == 0 else f"Query {query_num:2d}"
+        query_label = ctas_variant.upper() if ctas_variant else ("CTAS" if query_num == 0 else f"Query {query_num:2d}")
         log_prefix = f"{platform_prefix} {wh_prefix} [{scenario:10s}] [{run_type:10s}] Run {run_num}/{NUM_RUNS}: {query_label}"
 
         # Load query SQL if not provided, and wrap as CTAS
@@ -442,6 +495,139 @@ class QueryExecutor:
             "execution_time_sec": round(execution_time, 3),
             "rows_produced": rows_produced,
             "error_message": error_message or "",
+            "ctas_variant": ctas_variant,
+        }
+
+        # Log to DuckDB immediately
+        self.storage.write_result(result)
+
+        return result
+
+    def execute_dml_query(
+        self,
+        operation: str,
+        run_num: int,
+        warehouse_name: str,
+        warehouse_size: str,
+        scenario: str,
+        force_run_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Execute a DML query (DELETE or INSERT) and capture metrics.
+
+        Unlike execute_ctas_query, this executes the SQL directly without wrapping.
+
+        Args:
+            operation: DML operation name ('delete' or 'insert')
+            run_num: Run iteration (1-4)
+            warehouse_name: Name of the warehouse
+            warehouse_size: Size of the warehouse (SMALL, MEDIUM, XLARGE)
+            scenario: Scenario name (should be "dml")
+            force_run_type: Optional override for run type detection
+
+        Returns:
+            Dictionary with query execution metrics
+        """
+        query_num = 0  # Special marker for DML operations
+
+        # Determine run type based on warehouse state
+        run_type = self.determine_run_type(query_num, warehouse_name, force_run_type)
+
+        # Create JSON structured query tag
+        query_tag = {
+            "app": APP_NAME,
+            "workload_id": operation,
+            "run_id": self.run_id,
+            "scenario": scenario,
+        }
+
+        # Include warehouse size in log output for clarity
+        platform_prefix = "[SNOWFLAKE]"
+        wh_prefix = f"[{warehouse_size:6s}]" if warehouse_size else ""
+        log_prefix = f"{platform_prefix} {wh_prefix} [{scenario:10s}] [{run_type:10s}] Run {run_num}/{NUM_RUNS}: {operation.upper()}"
+
+        # Load DML query
+        try:
+            dml_sql = self.load_dml_query(operation)
+        except FileNotFoundError as e:
+            logger.error(f"{log_prefix} ❌ Error: {e}")
+            return self._create_error_result(
+                query_num,
+                run_num,
+                run_type,
+                json.dumps(query_tag),
+                warehouse_name,
+                warehouse_size,
+                scenario,
+                str(e),
+            )
+
+        # Set query tag
+        self.set_query_tag(query_tag)
+
+        # Log query start
+        logger.info(f"{log_prefix} 🚀 Starting DML...")
+
+        # Execute query and measure time
+        start_time = time.time()
+        timestamp = datetime.utcnow().isoformat()
+        error_message = None
+        query_id = None
+        rows_produced = 0
+
+        try:
+            # Execute asynchronously to get query ID immediately
+            cursor = self.connection.cursor()
+            cursor.execute_async(dml_sql)
+            query_id = cursor.sfqid
+
+            # Wait for completion
+            while self.connection.is_still_running(
+                self.connection.get_query_status(query_id)
+            ):
+                time.sleep(0.5)
+
+            # Check for errors and get row count
+            try:
+                self.connection.get_query_status_throw_if_error(query_id)
+                rows_produced = cursor.rowcount if cursor.rowcount >= 0 else -1
+            except Exception:
+                rows_produced = -1
+
+            cursor.close()
+
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"{log_prefix} ❌ Error: {error_message[:50]}")
+
+        execution_time = time.time() - start_time
+
+        if error_message is None:
+            row_msg = f"({rows_produced:,} rows)" if rows_produced >= 0 else ""
+            logger.info(f"{log_prefix} ✅ {execution_time:.2f}s {row_msg}".strip())
+
+            # Update warehouse state
+            state = self._get_warehouse_state(warehouse_name)
+            state["started"] = True
+            state["queries_executed"].add(query_num)
+
+        # Create result record
+        result = {
+            "run_id": self.run_id,
+            "timestamp": timestamp,
+            "platform": "snowflake",
+            "scenario": scenario,
+            "warehouse_name": warehouse_name,
+            "warehouse_size": warehouse_size,
+            "query_num": query_num,
+            "run_num": run_num,
+            "run_type": run_type,
+            "query_tag": json.dumps(query_tag),
+            "query_id": query_id or "",
+            "execution_time_sec": round(execution_time, 3),
+            "rows_produced": rows_produced,
+            "error_message": error_message or "",
+            "ctas_variant": operation,  # Store operation type ('delete' or 'insert')
         }
 
         # Log to DuckDB immediately

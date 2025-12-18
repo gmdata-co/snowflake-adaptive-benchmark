@@ -461,21 +461,26 @@ class SnowflakeBenchmark:
     def run_ctas_benchmark(
         self,
         warehouse_sizes: list[str] = None,
+        variants: list[str] = None,
     ):
         """
-        Run CTAS benchmark: Execute the special ctas.sql query as CREATE TABLE AS SELECT.
+        Run CTAS benchmark: Execute multiple CTAS query variants.
 
-        This creates a large denormalized table by joining all TPC-H tables (~6B rows at SF1000).
-        Tables are created during execution (tracked in metrics), then dropped
-        after warehouse destruction (not counted in metrics).
+        Executes 5 variants: narrow_tall, standard_tall, medium_wide,
+        very_wide, filtered. Each creates a table with different data shapes.
 
         Args:
             warehouse_sizes: List of warehouse sizes to test (default: ["medium"])
+            variants: List of variants to run (default: all 5)
         """
         scenario = "ctas"
 
         if warehouse_sizes is None:
             warehouse_sizes = ["medium"]
+
+        if variants is None:
+            variants = ["narrow_tall", "standard_tall", "medium_wide",
+                       "very_wide", "filtered"]
 
         logger.info("=" * 70)
         logger.info("SNOWFLAKE CTAS BENCHMARK")
@@ -484,7 +489,7 @@ class SnowflakeBenchmark:
         logger.info(f"Scenario: {scenario}")
         logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
-        logger.info("Query: ctas.sql (denormalized join of all TPC-H tables)")
+        logger.info(f"Variants: {', '.join(variants)}")
         logger.info("Execution: Sequential (CREATE TABLE AS SELECT)")
         logger.info("=" * 70)
 
@@ -496,15 +501,10 @@ class SnowflakeBenchmark:
         # Track created tables for cleanup
         created_tables = []
 
-        # Load the CTAS query once
-        ctas_query = self.query_executor.load_ctas_query()
-
         try:
-            # Execute CTAS query SEQUENTIALLY across warehouse sizes
+            # Execute CTAS variants SEQUENTIALLY across warehouse sizes
             for warehouse_size in warehouse_sizes:
                 warehouse_name = warehouse_map[warehouse_size]
-                table_name = f"BENCHMARK_CTAS_{self.run_id}"
-                created_tables.append(table_name)
 
                 logger.info(
                     f"\n[{warehouse_size.upper()}] Starting CTAS benchmark on {warehouse_name}"
@@ -523,19 +523,31 @@ class SnowflakeBenchmark:
                     # Switch to this warehouse
                     self.warehouse_manager.switch_warehouse(warehouse_name)
 
-                    # Execute single CTAS query
-                    self.query_executor.execute_ctas_query(
-                        query_num=0,  # Special marker for CTAS query
-                        run_num=1,
-                        warehouse_name=warehouse_name,
-                        warehouse_size=warehouse_size.upper(),
-                        scenario=scenario,
-                        query_sql=ctas_query,
-                        table_name=table_name,
-                    )
+                    # Execute ALL variants sequentially on this warehouse
+                    for variant in variants:
+                        logger.info(f"\n  [{warehouse_size.upper()}] Executing variant: {variant}")
+
+                        # Load variant query
+                        variant_query = self.query_executor.load_ctas_query_variant(variant)
+
+                        # Generate unique table name for this variant
+                        table_name = f"BENCHMARK_CTAS_{variant.upper()}_{self.run_id}"
+                        created_tables.append(table_name)
+
+                        # Execute variant
+                        self.query_executor.execute_ctas_query(
+                            query_num=0,  # Special marker for CTAS query
+                            run_num=1,
+                            warehouse_name=warehouse_name,
+                            warehouse_size=warehouse_size.upper(),
+                            scenario=scenario,
+                            query_sql=variant_query,
+                            table_name=table_name,
+                            ctas_variant=variant,
+                        )
 
                     logger.info(
-                        f"\n[{warehouse_size.upper()}] ✅ Completed CTAS benchmark on {warehouse_name}"
+                        f"\n[{warehouse_size.upper()}] ✅ Completed all variants on {warehouse_name}"
                     )
 
                 finally:
@@ -586,6 +598,166 @@ class SnowflakeBenchmark:
 
         cursor.close()
         logger.info("✅ Table cleanup complete")
+
+    def _setup_dml_table(self):
+        """
+        Set up the DML target table by dropping and recreating from source.
+
+        Note: SNOWFLAKE_SAMPLE_DATA tables are from a data share and cannot be cloned.
+        We use CTAS instead with a dedicated LARGE setup warehouse.
+        This runs BEFORE benchmark timing starts (not counted in metrics).
+        """
+        logger.info("\n🔧 Setting up DML target table (not counted in metrics)...")
+
+        # Create a dedicated LARGE warehouse for setup (6B rows needs horsepower)
+        setup_warehouse_name = f"BENCHMARK_WH_SETUP_{self.run_id}"
+        logger.info(f"   Creating LARGE setup warehouse: {setup_warehouse_name}")
+
+        cursor = self.conn.cursor()
+
+        try:
+            # Need SYSADMIN role to create warehouse
+            cursor.execute("USE ROLE SYSADMIN")
+
+            # Create large warehouse for setup
+            cursor.execute(f"""
+                CREATE WAREHOUSE IF NOT EXISTS {setup_warehouse_name}
+                WITH WAREHOUSE_SIZE = 'LARGE'
+                AUTO_SUSPEND = 60
+                AUTO_RESUME = TRUE
+                INITIALLY_SUSPENDED = FALSE
+            """)
+
+            # Switch back to benchmark role for data operations
+            cursor.execute("USE ROLE BENCHMARK")
+            cursor.execute(f"USE WAREHOUSE {setup_warehouse_name}")
+            logger.info(f"   Using setup warehouse: {setup_warehouse_name}")
+
+            # Drop existing table to ensure clean state
+            cursor.execute("DROP TABLE IF EXISTS BENCHMARK.BENCHMARK.LINEITEM_DML")
+            logger.info("   Dropped existing LINEITEM_DML table (if any)")
+
+            # CTAS from source - can't use CLONE because source is from a data share
+            logger.info(f"   Creating LINEITEM_DML via CTAS from SF{self.scale_factor} (this may take several minutes)...")
+            cursor.execute(f"""
+                CREATE TABLE BENCHMARK.BENCHMARK.LINEITEM_DML AS
+                SELECT * FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF{self.scale_factor}.LINEITEM
+            """)
+            logger.info("   Created fresh LINEITEM_DML table from source")
+
+        except Exception as e:
+            logger.error(f"   Failed to set up DML table: {e}")
+            raise
+        finally:
+            # Always destroy the setup warehouse (need SYSADMIN)
+            try:
+                cursor.execute("USE ROLE SYSADMIN")
+                cursor.execute(f"DROP WAREHOUSE IF EXISTS {setup_warehouse_name}")
+                logger.info(f"   Destroyed setup warehouse: {setup_warehouse_name}")
+                cursor.execute("USE ROLE BENCHMARK")
+            except Exception as e:
+                logger.warning(f"   Failed to destroy setup warehouse: {e}")
+            cursor.close()
+
+        logger.info("✅ DML table setup complete")
+
+    def run_dml_benchmark(
+        self,
+        warehouse_sizes: list[str] = None,
+    ):
+        """
+        Run DML benchmark: Execute DELETE + INSERT operations on lineitem data.
+
+        Measures partition refresh performance by:
+        1. Deleting a monthly slice of data (June 1995, ~75M rows at SF1000)
+        2. Re-inserting the same data from source
+
+        Args:
+            warehouse_sizes: List of warehouse sizes to test (default: ["medium"])
+        """
+        scenario = "dml"
+        operations = ["delete", "insert"]
+
+        if warehouse_sizes is None:
+            warehouse_sizes = ["medium"]
+
+        logger.info("=" * 70)
+        logger.info("SNOWFLAKE DML BENCHMARK")
+        logger.info("=" * 70)
+        logger.info(f"Run ID: {self.run_id}")
+        logger.info(f"Scenario: {scenario}")
+        logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
+        logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
+        logger.info(f"Operations: {', '.join(operations)}")
+        logger.info("Target: June 1995 lineitem data (~1.25% of table)")
+        logger.info("=" * 70)
+
+        # Setup: Create fresh target table BEFORE benchmark (not counted in metrics)
+        # Uses a dedicated LARGE warehouse that gets destroyed after setup
+        self._setup_dml_table()
+
+        # Create benchmark warehouses with scenario in name
+        warehouse_map = self.warehouse_manager.create_all_warehouses(
+            warehouse_sizes, scenario
+        )
+
+        try:
+            # Execute DML operations for each warehouse size
+            for warehouse_size in warehouse_sizes:
+                warehouse_name = warehouse_map[warehouse_size]
+
+                logger.info(
+                    f"\n[{warehouse_size.upper()}] Starting DML benchmark on {warehouse_name}"
+                )
+
+                # Record wall clock start time for this warehouse
+                self.storage.record_run_start(
+                    run_id=self.run_id,
+                    platform="snowflake",
+                    scenario=scenario,
+                    warehouse_size=warehouse_size.upper(),
+                    warehouse_name=warehouse_name,
+                )
+
+                try:
+                    # Switch to this warehouse
+                    self.warehouse_manager.switch_warehouse(warehouse_name)
+
+                    # Execute DELETE and INSERT sequentially
+                    for operation in operations:
+                        logger.info(f"\n  [{warehouse_size.upper()}] Executing: {operation.upper()}")
+
+                        # Execute DML operation and record metrics
+                        self.query_executor.execute_dml_query(
+                            operation=operation,
+                            run_num=1,
+                            warehouse_name=warehouse_name,
+                            warehouse_size=warehouse_size.upper(),
+                            scenario=scenario,
+                        )
+
+                    logger.info(
+                        f"\n[{warehouse_size.upper()}] ✅ Completed DML operations on {warehouse_name}"
+                    )
+
+                finally:
+                    # Record wall clock end time for this warehouse
+                    self.storage.record_run_end(
+                        run_id=self.run_id,
+                        platform="snowflake",
+                        scenario=scenario,
+                        warehouse_size=warehouse_size.upper(),
+                    )
+
+        finally:
+            # Always clean up warehouses
+            self.warehouse_manager.destroy_all_warehouses()
+
+        logger.info("\n" + "=" * 70)
+        logger.info("DML BENCHMARK COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"Results saved to: {DUCKDB_PATH}")
+        logger.info(f"Run ID: {self.run_id}")
 
     def run_benchmark(
         self,

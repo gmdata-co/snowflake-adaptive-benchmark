@@ -1,0 +1,9 @@
+"dml_variant","variant_description","variant_details","sql_snippet","full_sql"
+"delete","Monthly Delete","Delete June 1995 lineitem data (~7.5M rows)","DELETE FROM LINEITEM_DML WHERE l_shipdate >= '1995-06-01' AND l_shipdate < '1995-07-01'","DELETE FROM lineitem_dml
+WHERE l_shipdate >= '1995-06-01'
+  AND l_shipdate < '1995-07-01';"
+"insert","Monthly Insert","Insert June 1995 lineitem data from source (~7.5M rows)","INSERT INTO LINEITEM_DML SELECT * FROM LINEITEM WHERE l_shipdate >= '1995-06-01' AND l_shipdate < '1995-07-01'","INSERT INTO lineitem_dml
+SELECT *
+FROM lineitem
+WHERE l_shipdate >= '1995-06-01'
+  AND l_shipdate < '1995-07-01';"

@@ -20,13 +20,16 @@ SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA")
 # Warehouse configurations
 # Warehouses are created dynamically per benchmark run with run_id suffix
 # e.g., {SNOWFLAKE_WAREHOUSE_PREFIX}_{SIZE}_{RUN_ID}
-WAREHOUSE_SIZES = ["medium", "large", "xlarge"]
+WAREHOUSE_SIZES = ["small", "medium", "large", "xlarge", "2xlarge"]
 WAREHOUSE_SIZE_MAP = {
+    "small": "SMALL",
     "medium": "MEDIUM",
     "large": "LARGE",
     "xlarge": "XLARGE",
+    "2xlarge": "2XLARGE",
 }
 WAREHOUSE_PREFIX = os.getenv("SNOWFLAKE_WAREHOUSE_PREFIX")
+ADMIN_WAREHOUSE = os.getenv("SNOWFLAKE_ADMIN_WAREHOUSE", "COMPUTE_WH")
 
 # Warehouse settings for dynamic creation
 WAREHOUSE_AUTO_SUSPEND = 120  # 2 minutes

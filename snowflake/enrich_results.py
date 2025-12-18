@@ -30,6 +30,7 @@ from config import (
     SNOWFLAKE_DATABASE,
     SNOWFLAKE_SCHEMA,
     DUCKDB_PATH,
+    ADMIN_WAREHOUSE,
 )
 
 logger = get_logger(__name__)
@@ -102,7 +103,7 @@ class ResultsEnricher:
 
         # Set warehouse for querying ACCOUNT_USAGE
         cursor = self.conn.cursor()
-        cursor.execute("USE WAREHOUSE BENCHMARK_WH_MEDIUM")
+        cursor.execute(f"USE WAREHOUSE {ADMIN_WAREHOUSE}")
         cursor.close()
 
         logger.info("✅ Connected to Snowflake")

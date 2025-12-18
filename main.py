@@ -234,18 +234,19 @@ def run_concurrent_scenario(
 def run_ctas_scenario(
     warehouse_sizes_snow: Optional[List[str]] = None,
     warehouse_sizes_dbx: Optional[List[str]] = None,
+    variants: Optional[List[str]] = None,
     run_snowflake: bool = True,
     run_databricks: bool = True,
 ):
     """
-    Run CTAS scenario: Execute ctas.sql query as CREATE TABLE AS SELECT.
+    Run CTAS scenario: Execute CTAS query variants.
 
-    This creates a large denormalized table by joining all TPC-H tables (~6B rows at SF1000).
-    Tables are dropped after warehouse destruction (not counted in metrics).
+    This creates tables with different data shapes to benchmark write performance.
 
     Args:
         warehouse_sizes_snow: Snowflake warehouse sizes (default: ["medium"])
         warehouse_sizes_dbx: Databricks warehouse sizes (default: ["small"])
+        variants: CTAS variants to run (default: all 5)
         run_snowflake: Whether to run Snowflake (default: True)
         run_databricks: Whether to run Databricks (default: True)
     """
@@ -270,6 +271,7 @@ def run_ctas_scenario(
             sf_benchmark.connect()
             sf_benchmark.run_ctas_benchmark(
                 warehouse_sizes=warehouse_sizes_snow,
+                variants=variants,
             )
             sf_benchmark.disconnect()
             logger.info("✅ Snowflake CTAS benchmark completed")
@@ -284,6 +286,7 @@ def run_ctas_scenario(
             dbx_benchmark = DatabricksBenchmark(run_id=run_id)
             dbx_benchmark.run_ctas_benchmark(
                 warehouse_sizes=warehouse_sizes_dbx,
+                variants=variants,
             )
             logger.info("✅ Databricks CTAS benchmark completed")
         except Exception as e:
@@ -292,6 +295,70 @@ def run_ctas_scenario(
 
     logger.info("\n" + "=" * 80)
     logger.info("✅ All CTAS benchmarks completed")
+    logger.info("=" * 80)
+
+
+def run_dml_scenario(
+    warehouse_sizes_snow: Optional[List[str]] = None,
+    warehouse_sizes_dbx: Optional[List[str]] = None,
+    run_snowflake: bool = True,
+    run_databricks: bool = True,
+):
+    """
+    Run DML scenario: Execute DELETE + INSERT operations.
+
+    This measures partition refresh performance by deleting and re-inserting
+    a monthly slice of lineitem data.
+
+    Args:
+        warehouse_sizes_snow: Snowflake warehouse sizes (default: ["medium"])
+        warehouse_sizes_dbx: Databricks warehouse sizes (default: ["small"])
+        run_snowflake: Whether to run Snowflake (default: True)
+        run_databricks: Whether to run Databricks (default: True)
+    """
+    logger.info("🚀 Starting DML Benchmark")
+    logger.info("=" * 80)
+
+    # Generate unified run ID for both platforms
+    storage = BenchmarkStorage(DUCKDB_PATH)
+    run_id = storage.get_next_run_id()
+    logger.info(f"📊 Run ID: {run_id}")
+    logger.info("=" * 80)
+
+    # Import benchmark classes
+    from snowflake.benchmark import SnowflakeBenchmark
+    from databricks.benchmark import DatabricksBenchmark
+
+    # Run Snowflake DML
+    if run_snowflake:
+        logger.info("\n❄️  Running Snowflake DML benchmark...")
+        try:
+            sf_benchmark = SnowflakeBenchmark(run_id=run_id)
+            sf_benchmark.connect()
+            sf_benchmark.run_dml_benchmark(
+                warehouse_sizes=warehouse_sizes_snow,
+            )
+            sf_benchmark.disconnect()
+            logger.info("✅ Snowflake DML benchmark completed")
+        except Exception as e:
+            logger.error(f"❌ Snowflake DML benchmark failed: {e}", exc_info=True)
+            raise
+
+    # Run Databricks DML
+    if run_databricks:
+        logger.info("\n🧱 Running Databricks DML benchmark...")
+        try:
+            dbx_benchmark = DatabricksBenchmark(run_id=run_id)
+            dbx_benchmark.run_dml_benchmark(
+                warehouse_sizes=warehouse_sizes_dbx,
+            )
+            logger.info("✅ Databricks DML benchmark completed")
+        except Exception as e:
+            logger.error(f"❌ Databricks DML benchmark failed: {e}", exc_info=True)
+            raise
+
+    logger.info("\n" + "=" * 80)
+    logger.info("✅ All DML benchmarks completed")
     logger.info("=" * 80)
 
 
@@ -427,6 +494,24 @@ def run_all_scenarios(
                 logger.error(f"❌ Snowflake CTAS benchmark ({snow_size}) failed: {e}", exc_info=True)
                 raise
 
+            # SCENARIO 5: DML Benchmark
+            logger.info("\n" + "-" * 60)
+            logger.info(f"[{snow_size.upper()}] SCENARIO 5: DML BENCHMARK")
+            logger.info("-" * 60)
+
+            logger.info(f"\n❄️  Running Snowflake DML benchmark ({snow_size})...")
+            try:
+                sf_benchmark = SnowflakeBenchmark(run_id=run_id)
+                sf_benchmark.connect()
+                sf_benchmark.run_dml_benchmark(
+                    warehouse_sizes=[snow_size],
+                )
+                sf_benchmark.disconnect()
+                logger.info(f"✅ Snowflake DML benchmark ({snow_size}) completed")
+            except Exception as e:
+                logger.error(f"❌ Snowflake DML benchmark ({snow_size}) failed: {e}", exc_info=True)
+                raise
+
             logger.info(f"\n✅ Snowflake completed all scenarios for {snow_size.upper()}")
 
         logger.info("\n" + "=" * 80)
@@ -515,6 +600,22 @@ def run_all_scenarios(
                 logger.error(f"❌ Databricks CTAS benchmark ({dbx_size}) failed: {e}", exc_info=True)
                 raise
 
+            # SCENARIO 5: DML Benchmark
+            logger.info("\n" + "-" * 60)
+            logger.info(f"[{dbx_size.upper()}] SCENARIO 5: DML BENCHMARK")
+            logger.info("-" * 60)
+
+            logger.info(f"\n🧱 Running Databricks DML benchmark ({dbx_size})...")
+            try:
+                dbx_benchmark = DatabricksBenchmark(run_id=run_id)
+                dbx_benchmark.run_dml_benchmark(
+                    warehouse_sizes=[dbx_size],
+                )
+                logger.info(f"✅ Databricks DML benchmark ({dbx_size}) completed")
+            except Exception as e:
+                logger.error(f"❌ Databricks DML benchmark ({dbx_size}) failed: {e}", exc_info=True)
+                raise
+
             logger.info(f"\n✅ Databricks completed all scenarios for {dbx_size.upper()}")
 
         logger.info("\n" + "=" * 80)
@@ -540,14 +641,20 @@ Examples:
   # Run all scenarios with default medium warehouse
   python main.py
 
-  # Run all scenarios with ALL warehouse sizes (medium, large, xl)
+  # Run all scenarios with ALL warehouse sizes
   python main.py --warehouse-size all
 
   # Run with specific warehouse sizes (comma-separated)
   python main.py --warehouse-size medium,xl
 
-  # Run with xl warehouse only
+  # Run with xl warehouse only (runs both platforms)
   python main.py --warehouse-size xl
+
+  # Run Snowflake small only (no Databricks equivalent)
+  python main.py --warehouse-size snow-small
+
+  # Run Databricks xlarge only (no Snowflake equivalent)
+  python main.py --warehouse-size dbx-xl
 
   # Run with specific queries
   python main.py --queries 1,2,3 --warehouse-size xl
@@ -574,7 +681,7 @@ Examples:
   # Run only Databricks (skip Snowflake)
   python main.py --databricks-only
 
-  # Run only Snowflake (skip Snowflake)
+  # Run only Snowflake (skip Databricks)
   python main.py --snowflake-only
         """,
     )
@@ -588,14 +695,14 @@ Examples:
         "--warehouse-size",
         type=str,
         default="medium",
-        help="Warehouse size(s) to use. Options: medium, large, xl, all, or comma-separated (e.g., 'medium,xl'). Maps automatically: medium→medium/small, large→large/medium, xl→xlarge/large. Default: medium",
+        help="Warehouse size(s) to use. Options: snow-small, medium, large, xl, dbx-xl, all, or comma-separated (e.g., 'medium,xl'). Maps: snow-small→SF small only, medium→SF medium/DBX small, large→SF large/DBX medium, xl→SF xlarge/DBX large, dbx-xl→DBX xlarge only. Default: medium",
     )
     parser.add_argument(
         "--scenario",
         type=str,
-        choices=["normal", "coldstart", "concurrent", "ctas", "all"],
+        choices=["normal", "coldstart", "concurrent", "ctas", "dml", "all"],
         default="all",
-        help="Scenario to run: normal, coldstart, concurrent, ctas, or all (default - runs all scenarios with same run_id)",
+        help="Scenario to run: normal, coldstart, concurrent, ctas, dml, or all (default - runs all scenarios with same run_id)",
     )
     parser.add_argument(
         "--snowflake-only",
@@ -606,6 +713,11 @@ Examples:
         "--databricks-only",
         action="store_true",
         help="Run only Databricks benchmark/trial (skip Snowflake)",
+    )
+    parser.add_argument(
+        "--ctas-variants",
+        type=str,
+        help="Comma-separated CTAS variants to run. Options: narrow_tall, standard_tall, medium_wide, very_wide, filtered. Default: all",
     )
 
     args = parser.parse_args()
@@ -626,6 +738,17 @@ Examples:
             logger.error(f"Invalid query format: {args.queries}")
             sys.exit(1)
 
+    # Parse CTAS variants if provided
+    ctas_variants = None
+    if args.ctas_variants:
+        valid_variants = ["narrow_tall", "standard_tall", "medium_wide", "very_wide", "filtered"]
+        ctas_variants = [v.strip() for v in args.ctas_variants.split(",")]
+        for v in ctas_variants:
+            if v not in valid_variants:
+                logger.error(f"Invalid CTAS variant: {v}. Must be one of: {valid_variants}")
+                sys.exit(1)
+        logger.info(f"Running CTAS variants: {ctas_variants}")
+
     logger.info("=" * 80)
     logger.info("🚀 Snowflake vs Databricks TPC-H Benchmark")
     logger.info("=" * 80)
@@ -633,7 +756,12 @@ Examples:
     # Map warehouse size to platform-specific sizes
     # The mapping ensures equivalent compute power across platforms
     # Databricks is "minus 1 size" compared to Snowflake
+    # snow-small and dbx-xl are solo (no counterpart on the other platform)
     warehouse_size_mapping = {
+        "snow-small": {
+            "snowflake": "small",
+            "databricks": None,  # Solo - no DBX equivalent
+        },
         "medium": {
             "snowflake": "medium",
             "databricks": "small",
@@ -646,15 +774,19 @@ Examples:
             "snowflake": "xlarge",
             "databricks": "large",
         },
+        "dbx-xl": {
+            "snowflake": None,  # Solo - no SF equivalent
+            "databricks": "xlarge",
+        },
     }
 
     # Parse warehouse sizes - supports: single value, "all", or comma-separated
     def parse_warehouse_sizes(size_arg: str) -> list:
         """Parse warehouse size argument into list of size keys."""
         if size_arg == "all":
-            return ["medium", "large", "xl"]
+            return ["snow-small", "medium", "large", "xl", "dbx-xl"]
         sizes = [s.strip() for s in size_arg.split(",")]
-        valid_sizes = ["medium", "large", "xl"]
+        valid_sizes = ["snow-small", "medium", "large", "xl", "dbx-xl"]
         for s in sizes:
             if s not in valid_sizes:
                 logger.error(f"Invalid warehouse size: {s}. Must be one of: {valid_sizes}")
@@ -662,12 +794,15 @@ Examples:
         return sizes
 
     size_keys = parse_warehouse_sizes(args.warehouse_size)
-    warehouse_sizes_snow = [warehouse_size_mapping[k]["snowflake"] for k in size_keys]
-    warehouse_sizes_dbx = [warehouse_size_mapping[k]["databricks"] for k in size_keys]
+    # Filter out None values so each platform only gets applicable sizes
+    warehouse_sizes_snow = [warehouse_size_mapping[k]["snowflake"] for k in size_keys if warehouse_size_mapping[k]["snowflake"] is not None]
+    warehouse_sizes_dbx = [warehouse_size_mapping[k]["databricks"] for k in size_keys if warehouse_size_mapping[k]["databricks"] is not None]
 
     logger.info(f"Using warehouse size(s): {size_keys}")
-    for i, size_key in enumerate(size_keys):
-        logger.info(f"  → {size_key}: Snowflake {warehouse_sizes_snow[i]} / Databricks {warehouse_sizes_dbx[i]}")
+    for size_key in size_keys:
+        sf_size = warehouse_size_mapping[size_key]["snowflake"] or "n/a"
+        dbx_size = warehouse_size_mapping[size_key]["databricks"] or "n/a"
+        logger.info(f"  → {size_key}: Snowflake {sf_size} / Databricks {dbx_size}")
 
     try:
         # Determine which platforms to run
@@ -705,6 +840,15 @@ Examples:
         elif args.scenario == "ctas":
             logger.info("Running CTAS benchmark (CREATE TABLE AS SELECT)")
             run_ctas_scenario(
+                warehouse_sizes_snow=warehouse_sizes_snow,
+                warehouse_sizes_dbx=warehouse_sizes_dbx,
+                variants=ctas_variants,
+                run_snowflake=run_snowflake,
+                run_databricks=run_databricks,
+            )
+        elif args.scenario == "dml":
+            logger.info("Running DML benchmark (DELETE + INSERT)")
+            run_dml_scenario(
                 warehouse_sizes_snow=warehouse_sizes_snow,
                 warehouse_sizes_dbx=warehouse_sizes_dbx,
                 run_snowflake=run_snowflake,

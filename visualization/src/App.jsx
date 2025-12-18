@@ -1,7 +1,7 @@
 import { useState } from "react";
-// import { TabNavigation } from "./components/TabNavigation";
-// import { LegacyTab } from "./components/LegacyTab";
+import { TabNavigation } from "./components/TabNavigation";
 import { SummaryTab } from "./components/SummaryTab";
+import { QueryDetailsTab } from "./components/QueryDetailsTab";
 import { SnowflakeLogo } from "./components/SnowflakeLogo";
 import { DatabricksLogo } from "./components/DatabricksLogo";
 import benchmarkData from "./data/benchmarkData.json";
@@ -14,6 +14,7 @@ const SCENARIOS = [
   { id: 'concurrent', label: '22 Concurrent Queries' },
   { id: 'coldstart', label: '5 Cold Start Queries' },
   { id: 'ctas', label: 'CTAS Query' },
+  { id: 'dml', label: 'DML Refresh' },
 ];
 
 function HamburgerMenu({ isOpen, onToggle, scenarios, onSelectScenario }) {
@@ -92,6 +93,9 @@ function HamburgerMenu({ isOpen, onToggle, scenarios, onSelectScenario }) {
 }
 
 function HeaderPricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, onDbxPriceChange }) {
+  const [snowInputValue, setSnowInputValue] = useState(String(snowCreditPrice));
+  const [dbxInputValue, setDbxInputValue] = useState(String(dbxDbuPrice));
+
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '48px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px', whiteSpace: 'nowrap' }}>
@@ -100,11 +104,16 @@ function HeaderPricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, 
         <input
           type="text"
           inputMode="decimal"
-          value={snowCreditPrice}
+          value={snowInputValue}
           onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
-              onSnowPriceChange(isNaN(val) ? 0 : val);
+            const text = e.target.value;
+            // Allow empty, digits, and one decimal point
+            if (/^[0-9]*\.?[0-9]*$/.test(text)) {
+              setSnowInputValue(text);
+              const val = parseFloat(text);
+              if (!isNaN(val)) {
+                onSnowPriceChange(val);
+              }
             }
           }}
           style={{
@@ -129,11 +138,16 @@ function HeaderPricingInputs({ snowCreditPrice, dbxDbuPrice, onSnowPriceChange, 
         <input
           type="text"
           inputMode="decimal"
-          value={dbxDbuPrice}
+          value={dbxInputValue}
           onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (!isNaN(val) || e.target.value === '' || e.target.value === '.') {
-              onDbxPriceChange(isNaN(val) ? 0 : val);
+            const text = e.target.value;
+            // Allow empty, digits, and one decimal point
+            if (/^[0-9]*\.?[0-9]*$/.test(text)) {
+              setDbxInputValue(text);
+              const val = parseFloat(text);
+              if (!isNaN(val)) {
+                onDbxPriceChange(val);
+              }
             }
           }}
           style={{
@@ -160,6 +174,16 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [snowCreditPrice, setSnowCreditPrice] = useState(DEFAULT_SNOW_CREDIT_PRICE);
   const [dbxDbuPrice, setDbxDbuPrice] = useState(DEFAULT_DBX_DBU_PRICE);
+  const [activeTab, setActiveTab] = useState("summary");
+  const [detailsInitialState, setDetailsInitialState] = useState({ scenario: null, tier: null });
+
+  // Navigate from summary to details with filters pre-applied
+  const navigateToDetails = (scenario, tier) => {
+    setDetailsInitialState({ scenario, tier });
+    setActiveTab("details");
+    // Scroll to top when navigating
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: 'white' }}>
@@ -196,17 +220,26 @@ function App() {
           </div>
         </header>
 
-        {/* Tab Navigation - commented out */}
-        {/* <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} /> */}
+        {/* Tab Navigation */}
+        <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
         {/* Tab Content */}
         <div style={{ minHeight: '60vh' }}>
-          <SummaryTab
-            snowCreditPrice={snowCreditPrice}
-            dbxDbuPrice={dbxDbuPrice}
-          />
-          {/* {activeTab === 1 && <SummaryTab />} */}
-          {/* {activeTab === 2 && <LegacyTab />} */}
+          {activeTab === "summary" && (
+            <SummaryTab
+              snowCreditPrice={snowCreditPrice}
+              dbxDbuPrice={dbxDbuPrice}
+              onNavigateToDetails={navigateToDetails}
+            />
+          )}
+          {activeTab === "details" && (
+            <QueryDetailsTab
+              initialScenario={detailsInitialState.scenario}
+              initialTier={detailsInitialState.tier}
+              snowCreditPrice={snowCreditPrice}
+              dbxDbuPrice={dbxDbuPrice}
+            />
+          )}
         </div>
 
         {/* Footer */}

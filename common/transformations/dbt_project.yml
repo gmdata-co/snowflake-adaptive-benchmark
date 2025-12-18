@@ -21,7 +21,7 @@ clean-targets:
 vars:
   # Filter run_summary to specific run_ids. Set to empty list [] for all runs.
   # Example: ['035', '038']
-  run_ids: ['035', '038']
+  run_ids: ['035', '038', '039', '042', '040','044']
 
 # Configuring models
 models:
