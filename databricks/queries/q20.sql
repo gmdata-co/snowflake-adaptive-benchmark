@@ -3,7 +3,7 @@
 -- Function Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -11,25 +11,25 @@
 select
 	s_name,
 	s_address
-from select_pathfinder.benchmark.supplier,
-	select_pathfinder.benchmark.nation
+from ${DATABRICKS_CATALOG}.benchmark.supplier,
+	${DATABRICKS_CATALOG}.benchmark.nation
 where
 	s_suppkey in (
 		select
 			ps_suppkey
-		from select_pathfinder.benchmark.partSUPP
+		from ${DATABRICKS_CATALOG}.benchmark.partSUPP
 		where
 			ps_partkey in (
 				select
 					p_partkey
-				from select_pathfinder.benchmark.part
+				from ${DATABRICKS_CATALOG}.benchmark.part
 				where
 					p_name like 'forest%'
 			)
 			and ps_availqty > (
 				select
 					0.5 * sum(l_quantity)
-				from select_pathfinder.benchmark.lineitem
+				from ${DATABRICKS_CATALOG}.benchmark.lineitem
 				where
 					l_partkey = ps_partkey
 					and l_suppkey = ps_suppkey

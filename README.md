@@ -41,7 +41,16 @@ The tool supports three benchmarking scenarios:
      - `filtered`: Subset of data with filters applied
    - Tables are automatically dropped after benchmark completion
 
-Use `--scenario normal`, `--scenario coldstart`, `--scenario concurrent`, `--scenario ctas`, or `--scenario all` (default) to run all scenarios with a unified run ID.
+5. **DML (Delete + Insert)**
+   - Benchmarks data modification performance using DELETE and INSERT operations
+   - Simulates partition refresh pattern: delete a monthly slice, then re-insert it
+   - Operations:
+     - `delete`: Delete June 1995 lineitem data (~7.5M rows)
+     - `insert`: Insert June 1995 lineitem data from source (~7.5M rows)
+   - Tests real-world data update patterns common in data warehouses
+   - Requires `lineitem_dml` table (copy of lineitem) which is created automatically
+
+Use `--scenario normal`, `--scenario coldstart`, `--scenario concurrent`, `--scenario ctas`, `--scenario dml`, or `--scenario all` (default) to run all scenarios with a unified run ID.
 
 ## Getting Started
 
@@ -113,13 +122,20 @@ export SNOWFLAKE_WAREHOUSE_PREFIX=MY_WH
 
 #### Databricks Configuration
 
+**IMPORTANT: TPC-H SF1000 Data Requirement**
+
+Unlike Snowflake (which provides `SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000`), Databricks does not include a pre-loaded TPC-H SF1000 (1TB) dataset. You must ETL the TPC-H data into your Databricks catalog before running benchmarks.
+
+The benchmark expects these tables in your catalog/schema:
+- `customer`, `lineitem`, `nation`, `orders`, `part`, `partsupp`, `region`, `supplier`
+
 Configure these variables in `.env`:
 
 - **`DATABRICKS_HOST`** - Your Databricks workspace URL (required)
   - Format: `https://dbc-xxxxxxxxx.cloud.databricks.com`
 - **`DATABRICKS_TOKEN`** - Your Databricks personal access token (required)
-- **`DATABRICKS_CATALOG`** - Catalog for benchmark tables (required, user-specific)
-- **`DATABRICKS_SCHEMA`** - Schema for benchmark tables (required, user-specific)
+- **`DATABRICKS_CATALOG`** - Catalog containing your TPC-H SF1000 tables (required, user-specific)
+- **`DATABRICKS_SCHEMA`** - Schema containing your TPC-H SF1000 tables (required, user-specific)
 
 **Note:** SQL Warehouses are created and destroyed automatically during benchmark runs. No pre-configuration of warehouses needed.
 
@@ -128,8 +144,8 @@ Example:
 ```bash
 export DATABRICKS_HOST=https://dbc-abc123.cloud.databricks.com
 export DATABRICKS_TOKEN=dapi_abc123xyz789
-export DATABRICKS_CATALOG=my_benchmark_catalog
-export DATABRICKS_SCHEMA=my_benchmark_schema
+export DATABRICKS_CATALOG=your_tpch_catalog
+export DATABRICKS_SCHEMA=sf1000
 ```
 
 ### 3. Run Benchmarks
@@ -146,7 +162,7 @@ uv run main.py
 | Flag | Options | Description |
 |------|---------|-------------|
 | `--warehouse-size` | `small`, `medium`, `large`, `xl`, `2xl`, `all`, or comma-separated | Warehouse size(s) to use. Automatically maps to platform-specific sizes:<br>• `small`: Snowflake Small / Databricks Small<br>• `medium`: Snowflake Medium / Databricks Small (default)<br>• `large`: Snowflake Large / Databricks Medium<br>• `xl`: Snowflake XLarge / Databricks Large<br>• `2xl`: Snowflake 2XLarge / Databricks XLarge<br>• `all`: Run all sizes<br>• Comma-separated: e.g., `medium,xl` |
-| `--scenario` | `normal`, `coldstart`, `concurrent`, `ctas`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `concurrent`: All queries executed in parallel on same warehouse<br>• `ctas`: Create Table As Select benchmarks with multiple data shapes<br>• `all`: Run all scenarios with unified run ID (default) |
+| `--scenario` | `normal`, `coldstart`, `concurrent`, `ctas`, `dml`, `all` | Benchmark scenario to run:<br>• `normal`: Sequential queries with warm warehouse only<br>• `coldstart`: Warehouse suspended between each query only (defaults to queries 1,3,5,10,18 if not specified)<br>• `concurrent`: All queries executed in parallel on same warehouse<br>• `ctas`: Create Table As Select benchmarks with multiple data shapes<br>• `dml`: DELETE + INSERT operations simulating partition refresh<br>• `all`: Run all scenarios with unified run ID (default) |
 | `--queries` | e.g., `1,2,3` or `1-5` | Specific queries to run (default: all 22 TPC-H queries) |
 | `--ctas-variants` | comma-separated list | CTAS variants to run (default: all). Options: `narrow_tall`, `standard_tall`, `medium_wide`, `very_wide`, `filtered` |
 | `--snowflake-only` | (flag) | Run only Snowflake benchmark (skip Databricks) |
@@ -215,6 +231,18 @@ uv run main.py --scenario ctas --snowflake-only --warehouse-size small --ctas-va
 
 # Run CTAS on Databricks XL only (uses 2xl mapping)
 uv run main.py --scenario ctas --databricks-only --warehouse-size 2xl
+
+# Run DML scenario with default medium warehouse
+uv run main.py --scenario dml
+
+# Run DML on multiple warehouse sizes
+uv run main.py --scenario dml --warehouse-size medium,large,xl
+
+# Run DML on Snowflake only with large warehouse
+uv run main.py --scenario dml --snowflake-only --warehouse-size large
+
+# Run DML on Databricks only with XL warehouse
+uv run main.py --scenario dml --databricks-only --warehouse-size xl
 ```
 
 ### 4. Enrich Results with Cost and Performance Data
@@ -283,6 +311,9 @@ duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_coldstart;
 # Query results for concurrent scenario (parallel execution)
 duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_concurrent;"
 
+# Query results for DML scenario (delete + insert operations)
+duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_dml;"
+
 # Query latest run (all scenarios)
 duckdb benchmark_results.duckdb -c "SELECT * FROM platform_comparison_latest;"
 ```
@@ -299,6 +330,7 @@ Use [DBeaver](https://dbeaver.io/) for interactive querying and visualization:
 - `platform_comparison_normal` - Latest normal scenario (sequential queries, warm warehouse)
 - `platform_comparison_coldstart` - Latest coldstart scenario (warehouse suspended between queries)
 - `platform_comparison_concurrent` - Latest concurrent scenario (all queries in parallel)
+- `platform_comparison_dml` - Latest DML scenario (delete + insert operations)
 - `platform_comparison_latest` - Latest run with all scenarios combined
 
 See [common/transformations/README.md](common/transformations/README.md) for detailed documentation on the analysis views.
@@ -306,8 +338,11 @@ See [common/transformations/README.md](common/transformations/README.md) for det
 ## Requirements
 
 - Python 3.x with `uv` package manager
-- Snowflake account with access to `SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000`
+- Snowflake account with access to `SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000` (pre-loaded sample data)
 - Databricks workspace with TPC-H SF1000 dataset in Delta Lake
+  - **Note:** TPC-H SF1000 data is NOT pre-loaded in Databricks - you must ETL it yourself
+  - Set `DATABRICKS_CATALOG` to your catalog containing the TPC-H tables
+  - Required tables: `customer`, `lineitem`, `nation`, `orders`, `part`, `partsupp`, `region`, `supplier`
 
 ## Project Structure
 
@@ -333,10 +368,10 @@ uv run pytest tests/ -v
 ```
 
 The test suite includes 34 tests covering:
+
 - Warehouse manager lifecycle (create, destroy, suspend/resume)
 - Query executor logic and metrics collection
 - Scenario integration (normal, coldstart, all)
 - Run type classification (cold, semi-warm, warm)
 
 Tests use mocks and do not require database connections.
-

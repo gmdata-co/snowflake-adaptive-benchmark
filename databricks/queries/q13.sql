@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -16,7 +16,7 @@ from
 		select
 			c_custkey,
 			count(o_orderkey)
-		from select_pathfinder.benchmark.customer left outer join select_pathfinder.benchmark.orders on
+		from ${DATABRICKS_CATALOG}.benchmark.customer left outer join ${DATABRICKS_CATALOG}.benchmark.orders on
 				c_custkey = o_custkey
 				and o_comment not like '%special%requests%'
 		group by

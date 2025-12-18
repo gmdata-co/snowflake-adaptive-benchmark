@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -17,14 +17,14 @@ from
 		select
 			SUBSTR(c_phone, 1, 2) as cntrycode,
 			c_acctbal
-		from select_pathfinder.benchmark.customer
+		from ${DATABRICKS_CATALOG}.benchmark.customer
 		where
 			SUBSTR(c_phone, 1, 2) in
 				('13', '31', '23', '29', '30', '18', '17')
 			and c_acctbal > (
 				select
 					avg(c_acctbal)
-				from select_pathfinder.benchmark.customer
+				from ${DATABRICKS_CATALOG}.benchmark.customer
 				where
 					c_acctbal > 0.00
 					and SUBSTR(c_phone, 1, 2) in
@@ -33,7 +33,7 @@ from
 			and not exists (
 				select
 					*
-				from select_pathfinder.benchmark.orders
+				from ${DATABRICKS_CATALOG}.benchmark.orders
 				where
 					o_custkey = c_custkey
 			)

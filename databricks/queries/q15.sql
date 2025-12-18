@@ -1,6 +1,6 @@
 WITH revenue0 (supplier_no, total_revenue) AS (
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -8,7 +8,7 @@ WITH revenue0 (supplier_no, total_revenue) AS (
 select
 		l_suppkey,
 		sum(l_extendedprice * (1 - l_discount))
-	from select_pathfinder.benchmark.lineitem
+	from ${DATABRICKS_CATALOG}.benchmark.lineitem
 	where
 		l_shipdate >= date '1996-01-01'
 		and l_shipdate < date '1996-01-01' + INTERVAL 3 month
@@ -21,7 +21,7 @@ select
 	s_address,
 	s_phone,
 	total_revenue
-from select_pathfinder.benchmark.supplier,
+from ${DATABRICKS_CATALOG}.benchmark.supplier,
 	revenue0
 where
 	s_suppkey = supplier_no

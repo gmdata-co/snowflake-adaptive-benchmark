@@ -14,6 +14,7 @@ Requirements:
 Based on Snowflake's project_setup.sql approach
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -32,7 +33,7 @@ logger = get_logger(__name__)
 
 # Configuration matching project plan
 # Use existing catalog (creating new catalog requires storage configuration)
-CATALOG_NAME = "select_pathfinder"
+CATALOG_NAME = os.environ.get("DATABRICKS_CATALOG", "benchmark_catalog")
 SCHEMA_NAME = "benchmark"  # Schema for TPC-H tables (scale factor agnostic)
 
 # Warehouse configurations based on project plan Section 2

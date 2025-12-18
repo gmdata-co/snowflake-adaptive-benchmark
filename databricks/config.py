@@ -14,7 +14,7 @@ DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
 
 # Database and catalog configuration (from .env file - user-specific)
-CATALOG = os.getenv("DATABRICKS_CATALOG")
+CATALOG = os.getenv("DATABRICKS_CATALOG", "benchmark")
 SCHEMA = os.getenv("DATABRICKS_SCHEMA")
 
 # Admin warehouse ID (from .env file - for querying system tables and metadata, NOT for benchmarking)

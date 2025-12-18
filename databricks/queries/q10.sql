@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -17,10 +17,10 @@ select
 	c_address,
 	c_phone,
 	c_comment
-from select_pathfinder.benchmark.customer,
-	select_pathfinder.benchmark.orders,
-	select_pathfinder.benchmark.lineitem,
-	select_pathfinder.benchmark.nation
+from ${DATABRICKS_CATALOG}.benchmark.customer,
+	${DATABRICKS_CATALOG}.benchmark.orders,
+	${DATABRICKS_CATALOG}.benchmark.lineitem,
+	${DATABRICKS_CATALOG}.benchmark.nation
 where
 	c_custkey = o_custkey
 	and l_orderkey = o_orderkey

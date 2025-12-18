@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from uuid import UUID
 from common.logging_config import get_logger
 from common.storage import BenchmarkStorage
-from .config import QUERIES_DIR, APP_NAME, NUM_RUNS
+from .config import QUERIES_DIR, APP_NAME, NUM_RUNS, CATALOG
 
 logger = get_logger(__name__)
 
@@ -72,6 +72,18 @@ class QueryExecutor:
         if warehouse_id in self.warehouse_states:
             del self.warehouse_states[warehouse_id]
 
+    def _substitute_catalog(self, query_sql: str) -> str:
+        """
+        Replace catalog placeholder with actual catalog from environment.
+
+        Args:
+            query_sql: SQL query with ${DATABRICKS_CATALOG} placeholder
+
+        Returns:
+            SQL query with placeholder replaced by actual catalog name
+        """
+        return query_sql.replace("${DATABRICKS_CATALOG}", CATALOG)
+
     def determine_run_type(
         self, query_num: int, warehouse_id: str, force_run_type: Optional[str] = None
     ) -> str:
@@ -121,7 +133,7 @@ class QueryExecutor:
         with open(query_file, "r") as f:
             query_sql = f.read().strip()
 
-        return query_sql
+        return self._substitute_catalog(query_sql)
 
     def load_ctas_query(self) -> str:
         """
@@ -140,7 +152,7 @@ class QueryExecutor:
         with open(query_file, "r") as f:
             query_sql = f.read().strip()
 
-        return query_sql
+        return self._substitute_catalog(query_sql)
 
     def load_ctas_query_variant(self, variant: str) -> str:
         """
@@ -163,7 +175,7 @@ class QueryExecutor:
         with open(query_file, "r") as f:
             query_sql = f.read().strip()
 
-        return query_sql
+        return self._substitute_catalog(query_sql)
 
     def load_dml_query(self, operation: str) -> str:
         """
@@ -185,7 +197,7 @@ class QueryExecutor:
         with open(query_file, "r") as f:
             query_sql = f.read().strip()
 
-        return query_sql
+        return self._substitute_catalog(query_sql)
 
     def execute_query(
         self,

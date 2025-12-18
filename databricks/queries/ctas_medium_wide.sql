@@ -1,7 +1,7 @@
 -- CTAS Benchmark Query - Medium Wide Variant
 -- Tests moderate join with customer dimensions
 -- Produces ~1.5B rows × ~30 columns at SF1000
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 SELECT
     -- Orders columns
@@ -32,7 +32,7 @@ SELECT
     r.r_regionkey AS r_regionkey_dup,
     r.r_name,
     r.r_comment
-FROM select_pathfinder.benchmark.orders o
-JOIN select_pathfinder.benchmark.customer c ON o.o_custkey = c.c_custkey
-JOIN select_pathfinder.benchmark.nation n ON c.c_nationkey = n.n_nationkey
-JOIN select_pathfinder.benchmark.region r ON n.n_regionkey = r.r_regionkey;
+FROM ${DATABRICKS_CATALOG}.benchmark.orders o
+JOIN ${DATABRICKS_CATALOG}.benchmark.customer c ON o.o_custkey = c.c_custkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.nation n ON c.c_nationkey = n.n_nationkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.region r ON n.n_regionkey = r.r_regionkey;

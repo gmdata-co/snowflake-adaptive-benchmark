@@ -3,15 +3,15 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
 
 select
 	sum(l_extendedprice) / 7.0 as avg_yearly
-from select_pathfinder.benchmark.lineitem,
-	select_pathfinder.benchmark.part
+from ${DATABRICKS_CATALOG}.benchmark.lineitem,
+	${DATABRICKS_CATALOG}.benchmark.part
 where
 	p_partkey = l_partkey
 	and p_brand = 'Brand#23'
@@ -19,7 +19,7 @@ where
 	and l_quantity < (
 		select
 			0.2 * avg(l_quantity)
-		from select_pathfinder.benchmark.lineitem
+		from ${DATABRICKS_CATALOG}.benchmark.lineitem
 		where
 			l_partkey = p_partkey
 	);

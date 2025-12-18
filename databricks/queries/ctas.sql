@@ -1,7 +1,7 @@
 -- CTAS Benchmark Query
 -- Joins all TPC-H tables into a denormalized fact table
 -- Produces one row per LINEITEM with all dimension attributes (~6B rows at SF1000)
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 SELECT
     -- Lineitem (fact table)
@@ -63,13 +63,13 @@ SELECT
     cr.r_name AS customer_region,
     -- Supplier Region
     sr.r_name AS supplier_region
-FROM select_pathfinder.benchmark.lineitem l
-JOIN select_pathfinder.benchmark.orders o ON l.l_orderkey = o.o_orderkey
-JOIN select_pathfinder.benchmark.customer c ON o.o_custkey = c.c_custkey
-JOIN select_pathfinder.benchmark.part p ON l.l_partkey = p.p_partkey
-JOIN select_pathfinder.benchmark.supplier s ON l.l_suppkey = s.s_suppkey
-JOIN select_pathfinder.benchmark.partsupp ps ON l.l_partkey = ps.ps_partkey AND l.l_suppkey = ps.ps_suppkey
-JOIN select_pathfinder.benchmark.nation cn ON c.c_nationkey = cn.n_nationkey
-JOIN select_pathfinder.benchmark.nation sn ON s.s_nationkey = sn.n_nationkey
-JOIN select_pathfinder.benchmark.region cr ON cn.n_regionkey = cr.r_regionkey
-JOIN select_pathfinder.benchmark.region sr ON sn.n_regionkey = sr.r_regionkey;
+FROM ${DATABRICKS_CATALOG}.benchmark.lineitem l
+JOIN ${DATABRICKS_CATALOG}.benchmark.orders o ON l.l_orderkey = o.o_orderkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.customer c ON o.o_custkey = c.c_custkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.part p ON l.l_partkey = p.p_partkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.supplier s ON l.l_suppkey = s.s_suppkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.partsupp ps ON l.l_partkey = ps.ps_partkey AND l.l_suppkey = ps.ps_suppkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.nation cn ON c.c_nationkey = cn.n_nationkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.nation sn ON s.s_nationkey = sn.n_nationkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.region cr ON cn.n_regionkey = cr.r_regionkey
+JOIN ${DATABRICKS_CATALOG}.benchmark.region sr ON sn.n_regionkey = sr.r_regionkey;

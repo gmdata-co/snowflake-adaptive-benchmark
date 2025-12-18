@@ -3,7 +3,7 @@
 -- Function Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -15,14 +15,14 @@ select
 	o_orderdate,
 	o_totalprice,
 	sum(l_quantity)
-from select_pathfinder.benchmark.customer,
-	select_pathfinder.benchmark.orders,
-	select_pathfinder.benchmark.lineitem
+from ${DATABRICKS_CATALOG}.benchmark.customer,
+	${DATABRICKS_CATALOG}.benchmark.orders,
+	${DATABRICKS_CATALOG}.benchmark.lineitem
 where
 	o_orderkey in (
 		select
 			l_orderkey
-		from select_pathfinder.benchmark.lineitem
+		from ${DATABRICKS_CATALOG}.benchmark.lineitem
 		group by
 			l_orderkey having
 				sum(l_quantity) > 300

@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -17,11 +17,11 @@ select
 	s_address,
 	s_phone,
 	s_comment
-from select_pathfinder.benchmark.part,
-	select_pathfinder.benchmark.supplier,
-	select_pathfinder.benchmark.partSUPP,
-	select_pathfinder.benchmark.nation,
-	select_pathfinder.benchmark.region
+from ${DATABRICKS_CATALOG}.benchmark.part,
+	${DATABRICKS_CATALOG}.benchmark.supplier,
+	${DATABRICKS_CATALOG}.benchmark.partSUPP,
+	${DATABRICKS_CATALOG}.benchmark.nation,
+	${DATABRICKS_CATALOG}.benchmark.region
 where
 	p_partkey = ps_partkey
 	and s_suppkey = ps_suppkey
@@ -33,10 +33,10 @@ where
 	and ps_supplycost = (
 		select
 			min(ps_supplycost)
-		from select_pathfinder.benchmark.partSUPP,
-			select_pathfinder.benchmark.supplier,
-			select_pathfinder.benchmark.nation,
-			select_pathfinder.benchmark.region
+		from ${DATABRICKS_CATALOG}.benchmark.partSUPP,
+			${DATABRICKS_CATALOG}.benchmark.supplier,
+			${DATABRICKS_CATALOG}.benchmark.nation,
+			${DATABRICKS_CATALOG}.benchmark.region
 		where
 			p_partkey = ps_partkey
 			and s_suppkey = ps_suppkey

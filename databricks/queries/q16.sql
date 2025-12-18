@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -13,8 +13,8 @@ select
 	p_type,
 	p_size,
 	count(distinct ps_suppkey) as supplier_cnt
-from select_pathfinder.benchmark.partSUPP,
-	select_pathfinder.benchmark.part
+from ${DATABRICKS_CATALOG}.benchmark.partSUPP,
+	${DATABRICKS_CATALOG}.benchmark.part
 where
 	p_partkey = ps_partkey
 	and p_brand <> 'Brand#45'
@@ -23,7 +23,7 @@ where
 	and ps_suppkey not in (
 		select
 			s_suppkey
-		from select_pathfinder.benchmark.supplier
+		from ${DATABRICKS_CATALOG}.benchmark.supplier
 		where
 			s_comment like '%Customer%Complaints%'
 	)

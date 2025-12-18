@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -11,10 +11,10 @@
 select
 	s_name,
 	count(*) as numwait
-from select_pathfinder.benchmark.supplier,
-	select_pathfinder.benchmark.lineitem l1,
-	select_pathfinder.benchmark.orders,
-	select_pathfinder.benchmark.nation
+from ${DATABRICKS_CATALOG}.benchmark.supplier,
+	${DATABRICKS_CATALOG}.benchmark.lineitem l1,
+	${DATABRICKS_CATALOG}.benchmark.orders,
+	${DATABRICKS_CATALOG}.benchmark.nation
 where
 	s_suppkey = l1.l_suppkey
 	and o_orderkey = l1.l_orderkey
@@ -23,7 +23,7 @@ where
 	and exists (
 		select
 			*
-		from select_pathfinder.benchmark.lineitem l2
+		from ${DATABRICKS_CATALOG}.benchmark.lineitem l2
 		where
 			l2.l_orderkey = l1.l_orderkey
 			and l2.l_suppkey <> l1.l_suppkey
@@ -31,7 +31,7 @@ where
 	and not exists (
 		select
 			*
-		from select_pathfinder.benchmark.lineitem l3
+		from ${DATABRICKS_CATALOG}.benchmark.lineitem l3
 		where
 			l3.l_orderkey = l1.l_orderkey
 			and l3.l_suppkey <> l1.l_suppkey

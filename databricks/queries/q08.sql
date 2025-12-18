@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -20,14 +20,14 @@ from
 			extract(year from o_orderdate) as o_year,
 			l_extendedprice * (1 - l_discount) as volume,
 			n2.n_name as nation
-		from select_pathfinder.benchmark.part,
-			select_pathfinder.benchmark.supplier,
-			select_pathfinder.benchmark.lineitem,
-			select_pathfinder.benchmark.orders,
-			select_pathfinder.benchmark.customer,
-			select_pathfinder.benchmark.nation n1,
-			select_pathfinder.benchmark.nation n2,
-			select_pathfinder.benchmark.region
+		from ${DATABRICKS_CATALOG}.benchmark.part,
+			${DATABRICKS_CATALOG}.benchmark.supplier,
+			${DATABRICKS_CATALOG}.benchmark.lineitem,
+			${DATABRICKS_CATALOG}.benchmark.orders,
+			${DATABRICKS_CATALOG}.benchmark.customer,
+			${DATABRICKS_CATALOG}.benchmark.nation n1,
+			${DATABRICKS_CATALOG}.benchmark.nation n2,
+			${DATABRICKS_CATALOG}.benchmark.region
 		where
 			p_partkey = l_partkey
 			and s_suppkey = l_suppkey

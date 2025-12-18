@@ -351,7 +351,7 @@ where
 	and l_shipdate < date '1995-09-01' + INTERVAL 1 month;"
 "15","TPC-H","Advanced Patterns","Top Supplier Query - CTE with MAX subquery for top revenue supplier","WITH revenue0 AS (SELECT l_suppkey, SUM(...) FROM LINEITEM...) SELECT s_suppkey, s_name... WHERE total_revenue = (SELECT MAX...)","WITH revenue0 (supplier_no, total_revenue) AS (
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --

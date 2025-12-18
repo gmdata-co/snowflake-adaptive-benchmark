@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -13,9 +13,9 @@ select
 	sum(l_extendedprice * (1 - l_discount)) as revenue,
 	o_orderdate,
 	o_shippriority
-from select_pathfinder.benchmark.customer,
-	select_pathfinder.benchmark.orders,
-	select_pathfinder.benchmark.lineitem
+from ${DATABRICKS_CATALOG}.benchmark.customer,
+	${DATABRICKS_CATALOG}.benchmark.orders,
+	${DATABRICKS_CATALOG}.benchmark.lineitem
 where
 	c_mktsegment = 'BUILDING'
 	and c_custkey = o_custkey

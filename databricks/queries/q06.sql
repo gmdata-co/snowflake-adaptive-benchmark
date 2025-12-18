@@ -3,14 +3,14 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
 
 select
 	sum(l_extendedprice * l_discount) as revenue
-from select_pathfinder.benchmark.lineitem
+from ${DATABRICKS_CATALOG}.benchmark.lineitem
 where
 	l_shipdate >= date '1994-01-01'
 	and l_shipdate < date '1994-01-01' + INTERVAL 1 year

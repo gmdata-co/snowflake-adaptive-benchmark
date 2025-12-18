@@ -3,7 +3,7 @@
 -- Functional Query Definition
 -- Approved February 1998
 -- Adapted for Databricks from Snowflake TPC-H query
--- Catalog: select_pathfinder
+-- Catalog: ${DATABRICKS_CATALOG}
 -- Schema: benchmark
 -- Scale Factor: SF1000 (1TB)
 --
@@ -19,7 +19,7 @@ select
 	avg(l_extendedprice) as avg_price,
 	avg(l_discount) as avg_disc,
 	count(*) as count_order
-from select_pathfinder.benchmark.lineitem
+from ${DATABRICKS_CATALOG}.benchmark.lineitem
 where
 	l_shipdate <= date '1998-12-01' - INTERVAL 90 DAYS
 group by
