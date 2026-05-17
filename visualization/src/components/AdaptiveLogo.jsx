@@ -1,8 +1,7 @@
-// Adaptive warehouse badge. (Component name kept as `DatabricksLogo` so
-// existing imports keep working; the JSON `databricks` key maps to adaptive.)
+// Adaptive warehouse badge. The JSON `adaptive` key maps to adaptive results.
 export const ADAPTIVE_COLOR = "#F59E0B";
 
-export function DatabricksLogo({ size = 40, className = "" }) {
+export function AdaptiveLogo({ size = 40, className = "" }) {
   return (
     <span
       className={className}

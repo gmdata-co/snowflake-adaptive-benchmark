@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import { ScenarioSummaryChart } from "./components/ScenarioSummaryChart";
-import { SnowflakeLogo, GEN1_COLOR } from "./components/SnowflakeLogo";
-import { DatabricksLogo, ADAPTIVE_COLOR } from "./components/DatabricksLogo";
+import { Gen1Logo, GEN1_COLOR } from "./components/Gen1Logo";
+import { AdaptiveLogo, ADAPTIVE_COLOR } from "./components/AdaptiveLogo";
 import benchmarkData from "./data/benchmarkData.json";
 
 const DEFAULT_CREDIT_PRICE = 2.0;
@@ -29,22 +29,22 @@ function groupByScenario(comparisons) {
 function priced(rows, price) {
   return rows.map((c) => ({
     ...c,
-    snowflake: c.snowflake
+    gen1: c.gen1
       ? {
-          ...c.snowflake,
+          ...c.gen1,
           cost:
-            c.snowflake.credits != null
-              ? +(c.snowflake.credits * price).toFixed(2)
-              : c.snowflake.cost,
+            c.gen1.credits != null
+              ? +(c.gen1.credits * price).toFixed(2)
+              : c.gen1.cost,
         }
       : null,
-    databricks: c.databricks
+    adaptive: c.adaptive
       ? {
-          ...c.databricks,
+          ...c.adaptive,
           cost:
-            c.databricks.dbus != null
-              ? +(c.databricks.dbus * price).toFixed(2)
-              : c.databricks.cost,
+            c.adaptive.dbus != null
+              ? +(c.adaptive.dbus * price).toFixed(2)
+              : c.adaptive.cost,
         }
       : null,
   }));
@@ -54,9 +54,9 @@ function priced(rows, price) {
 function computeVerdict(rows) {
   let gT = 0, gC = 0, aT = 0, aC = 0, n = 0;
   for (const c of rows) {
-    if (!c.snowflake || !c.databricks) continue;
-    gT += c.snowflake.time; gC += c.snowflake.cost;
-    aT += c.databricks.time; aC += c.databricks.cost;
+    if (!c.gen1 || !c.adaptive) continue;
+    gT += c.gen1.time; gC += c.gen1.cost;
+    aT += c.adaptive.time; aC += c.adaptive.cost;
     n += 1;
   }
   if (!n) return null;
@@ -279,13 +279,13 @@ function Legend() {
   return (
     <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <SnowflakeLogo size={18} />
+        <Gen1Logo size={18} />
         <span style={{ color: GEN1_COLOR, fontWeight: 600, fontSize: "0.85rem" }}>
           Gen1 warehouse
         </span>
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <DatabricksLogo size={18} />
+        <AdaptiveLogo size={18} />
         <span style={{ color: ADAPTIVE_COLOR, fontWeight: 600, fontSize: "0.85rem" }}>
           Adaptive warehouse
         </span>

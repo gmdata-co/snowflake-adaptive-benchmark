@@ -1,8 +1,7 @@
-// Gen1 warehouse badge. (Component name kept as `SnowflakeLogo` so existing
-// imports keep working; the JSON `snowflake` key maps to gen1 results.)
+// Gen1 warehouse badge. The JSON `gen1` key maps to gen1 results.
 export const GEN1_COLOR = "#29B5E8";
 
-export function SnowflakeLogo({ size = 40, className = "" }) {
+export function Gen1Logo({ size = 40, className = "" }) {
   return (
     <span
       className={className}

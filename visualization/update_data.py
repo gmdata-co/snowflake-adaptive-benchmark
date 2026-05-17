@@ -2,11 +2,11 @@
 Update visualization JSON data from DuckDB.
 
 Queries the adaptive_vs_gen1_summary dbt view and writes benchmarkData.json
-in a shape the React chart consumes. The legacy schema used `snowflake` and
-`databricks` keys per comparison row; this script reuses that shape but maps:
+in a shape the React chart consumes. The legacy schema used `gen1` and
+`adaptive` keys per comparison row; this script reuses that shape but maps:
 
-    gen1 warehouse runs    -> "snowflake" key
-    adaptive warehouse runs -> "databricks" key
+    gen1 warehouse runs    -> "gen1" key
+    adaptive warehouse runs -> "adaptive" key
 
 so the existing ScenarioSummaryChart renders 8 points per scenario (4 sizes ×
 2 warehouse types) with no JSX changes required. Labels and tooltips reflect
@@ -118,7 +118,7 @@ def get_summary_rows(conn: duckdb.DuckDBPyConnection):
 def build_comparisons(rows, policy=None):
     """
     Pivot rows so each (scenario, qtm, warehouse_tier) becomes one comparison
-    with both 'snowflake' (= gen1) and 'databricks' (= adaptive) sub-records.
+    with both 'gen1' (= gen1) and 'adaptive' (= adaptive) sub-records.
 
     Idle-policy selection is PER CELL (per scenario/type/qtm/tier) and reads
     the real `idle_policy` column. A row matches the requested `policy` when
@@ -223,11 +223,11 @@ def _emit_panel_rows(panel_id, scenario, qtm, gen1_by_tier, adaptive_by_tier):
         g = gen1_by_tier.get(tier)
         a = adaptive_by_tier.get(tier)
 
-        # The chart's existing JSX uses `snowflake` and `databricks` keys.
-        # We reuse those keys: snowflake = gen1, databricks = adaptive.
-        snowflake_data = None
+        # The chart's existing JSX uses `gen1` and `adaptive` keys.
+        # We reuse those keys: gen1 = gen1, adaptive = adaptive.
+        gen1_data = None
         if g:
-            snowflake_data = {
+            gen1_data = {
                 "size": g["size"],
                 "label": f"Gen1 {g['size']}",
                 "time": round(g["time"], 2) if g["time"] is not None else None,
@@ -236,10 +236,10 @@ def _emit_panel_rows(panel_id, scenario, qtm, gen1_by_tier, adaptive_by_tier):
                 "fallback": bool(g.get("fallback")),
             }
 
-        databricks_data = None
+        adaptive_data = None
         if a:
             qtm_suffix = f" QTM={a['qtm']}" if a["qtm"] is not None else ""
-            databricks_data = {
+            adaptive_data = {
                 "size": a["size"],
                 "label": f"Adaptive {a['size']}{qtm_suffix}",
                 "time": round(a["time"], 2) if a["time"] is not None else None,
@@ -250,16 +250,16 @@ def _emit_panel_rows(panel_id, scenario, qtm, gen1_by_tier, adaptive_by_tier):
 
         # Row is flagged fallback only if a PRESENT sub-record is fallback.
         row_fallback = bool(
-            (snowflake_data and snowflake_data["fallback"])
-            or (databricks_data and databricks_data["fallback"])
+            (gen1_data and gen1_data["fallback"])
+            or (adaptive_data and adaptive_data["fallback"])
         )
         rows.append({
             "id": f"{panel_id}-{tier}",
             "scenario": panel_id,
             "scenarioLabel": label,
             "warehouseTier": tier,
-            "snowflake": snowflake_data,
-            "databricks": databricks_data,
+            "gen1": gen1_data,
+            "adaptive": adaptive_data,
             "policyFallback": row_fallback,
         })
     return rows
