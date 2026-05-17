@@ -8,14 +8,19 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { SnowflakeLogo } from "./SnowflakeLogo";
-import { DatabricksLogo } from "./DatabricksLogo";
-import snowflakeLogo from "../assets/snowflake-logo.png";
-import databricksLogo from "../assets/databricks-logo.png";
+import { SnowflakeLogo, GEN1_COLOR } from "./SnowflakeLogo";
+import { DatabricksLogo, ADAPTIVE_COLOR } from "./DatabricksLogo";
 import { formatTime, convertTime, getUnitSuffix, getTimeUnit } from "../utils/formatTime";
+
+// `snowflake` key = Gen1 results, `databricks` key = Adaptive results.
+const GEN1 = "snowflake";
+const ADAPTIVE = "databricks";
+const platformColor = (p) => (p === GEN1 ? GEN1_COLOR : ADAPTIVE_COLOR);
+const platformName = (p) => (p === GEN1 ? "Gen1" : "Adaptive");
 
 // Size abbreviations for labels
 const sizeAbbrev = {
+  XSMALL: "XS",
   SMALL: "S",
   MEDIUM: "M",
   LARGE: "L",
@@ -27,34 +32,46 @@ function CustomScatterShape({ cx, cy, payload, hoveredTier }) {
   const isHovered = hoveredTier === payload.tier;
   const isDimmed = hoveredTier !== null && !isHovered;
 
-  const baseSize = 32;
-  const size = isHovered ? 44 : baseSize;
+  const baseR = 13;
+  const r = isHovered ? 18 : baseR;
   const opacity = isDimmed ? 0.3 : 1;
 
-  const logoSrc = payload.platform === "snowflake" ? snowflakeLogo : databricksLogo;
-  const labelColor = payload.platform === "snowflake" ? "#29B5E8" : "#FF3621";
+  const color = platformColor(payload.platform);
   const sizeLabel = sizeAbbrev[payload.size] || payload.size;
 
   return (
     <g opacity={opacity} style={{ transition: 'opacity 0.2s ease' }}>
-      <image
-        x={cx - size / 2}
-        y={cy - size / 2}
-        width={size}
-        height={size}
-        href={logoSrc}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill={color}
+        stroke="#0f172a"
+        strokeWidth={2}
         style={{ transition: 'all 0.2s ease' }}
       />
       <text
         x={cx}
-        y={cy - size / 2 - 6}
+        y={cy}
         textAnchor="middle"
-        fill={labelColor}
+        dominantBaseline="central"
+        fill="#0f172a"
         fontSize={isHovered ? 13 : 11}
-        fontWeight="700"
+        fontWeight="800"
         style={{ transition: 'font-size 0.2s ease' }}
       >
         {sizeLabel}
+      </text>
+      <text
+        x={cx}
+        y={cy - r - 6}
+        textAnchor="middle"
+        fill={color}
+        fontSize={isHovered ? 12 : 10}
+        fontWeight="700"
+        style={{ transition: 'font-size 0.2s ease' }}
+      >
+        {platformName(payload.platform)}
       </text>
     </g>
   );
@@ -108,9 +125,9 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
     if (hasBoth) {
       headerText = `${comparison.snowflake.size} vs ${comparison.databricks.size}`;
     } else if (hasSnowflake) {
-      headerText = `Snowflake ${comparison.snowflake.size}`;
+      headerText = `Gen1 ${comparison.snowflake.size}`;
     } else {
-      headerText = `Databricks ${comparison.databricks.size}`;
+      headerText = `Adaptive ${comparison.databricks.size}`;
     }
 
     return (
@@ -139,7 +156,7 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: hasDatabricks ? '8px' : '0' }}>
             <SnowflakeLogo size={20} />
             <div style={{ flex: 1 }}>
-              <div style={{ color: '#29B5E8', fontWeight: '600', fontSize: '13px' }}>{comparison.snowflake.size}</div>
+              <div style={{ color: GEN1_COLOR, fontWeight: '600', fontSize: '13px' }}>Gen1 {comparison.snowflake.size}</div>
               <div style={{ color: '#94a3b8', fontSize: '12px' }}>
                 {formatTime(comparison.snowflake.time, timeUnit)} / ${(comparison.snowflake.cost ?? 0).toFixed(2)}
               </div>
@@ -152,7 +169,7 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: hasBoth ? '10px' : '0' }}>
             <DatabricksLogo size={20} />
             <div style={{ flex: 1 }}>
-              <div style={{ color: '#FF3621', fontWeight: '600', fontSize: '13px' }}>{comparison.databricks.size}</div>
+              <div style={{ color: ADAPTIVE_COLOR, fontWeight: '600', fontSize: '13px' }}>Adaptive {comparison.databricks.size}</div>
               <div style={{ color: '#94a3b8', fontSize: '12px' }}>
                 {formatTime(comparison.databricks.time, timeUnit)} / ${(comparison.databricks.cost ?? 0).toFixed(2)}
               </div>
@@ -165,14 +182,14 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
           <div style={{ borderTop: '1px solid #334155', paddingTop: '10px', fontSize: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
               <span style={{ color: '#9ca3af' }}>Speed:</span>
-              <span style={{ color: speedDiff.winner === 'snowflake' ? '#29B5E8' : speedDiff.winner === 'databricks' ? '#FF3621' : '#9ca3af', fontWeight: '600' }}>
-                {speedDiff.winner ? `${speedDiff.winner === 'snowflake' ? 'Snowflake' : 'Databricks'} ${speedDiff.text}` : speedDiff.text}
+              <span style={{ color: speedDiff.winner === 'snowflake' ? GEN1_COLOR : speedDiff.winner === 'databricks' ? ADAPTIVE_COLOR : '#9ca3af', fontWeight: '600' }}>
+                {speedDiff.winner ? `${speedDiff.winner === 'snowflake' ? 'Gen1' : 'Adaptive'} ${speedDiff.text}` : speedDiff.text}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#9ca3af' }}>Cost:</span>
-              <span style={{ color: costDiff.winner === 'snowflake' ? '#29B5E8' : costDiff.winner === 'databricks' ? '#FF3621' : '#9ca3af', fontWeight: '600' }}>
-                {costDiff.winner ? `${costDiff.winner === 'snowflake' ? 'Snowflake' : 'Databricks'} ${costDiff.text}` : costDiff.text}
+              <span style={{ color: costDiff.winner === 'snowflake' ? GEN1_COLOR : costDiff.winner === 'databricks' ? ADAPTIVE_COLOR : '#9ca3af', fontWeight: '600' }}>
+                {costDiff.winner ? `${costDiff.winner === 'snowflake' ? 'Gen1' : 'Adaptive'} ${costDiff.text}` : costDiff.text}
               </span>
             </div>
           </div>

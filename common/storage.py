@@ -5,6 +5,7 @@ This module provides thread-safe DuckDB storage for benchmark results from both
 Snowflake and Databricks benchmarks.
 """
 
+import os
 import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -129,15 +130,26 @@ class BenchmarkStorage:
     def _init_database(self):
         """Initialize database tables and views if they don't exist."""
         def _init_operation(conn):
-            # Create snowflake_results table
+            # Create snowflake_results table.
+            # warehouse_type distinguishes 'gen1' vs 'adaptive' so the same
+            # run_id can carry both warehouse generations.
+            # qtm is NULL for gen1 (param doesn't apply).
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS snowflake_results (
                     run_id VARCHAR NOT NULL,
                     timestamp TIMESTAMP NOT NULL,
                     platform VARCHAR NOT NULL,
                     scenario VARCHAR NOT NULL,
+                    warehouse_type VARCHAR NOT NULL,
                     warehouse_name VARCHAR NOT NULL,
                     warehouse_size VARCHAR NOT NULL,
+                    qtm INTEGER,
+                    -- Idle/shutdown policy recorded AT RUN TIME (not guessed
+                    -- later): 'wait_for_suspend' (gen1 left to auto-suspend,
+                    -- idle tail billed) | 'immediate_drop' (gen1 killed the
+                    -- instant the workload finished) | 'n_a' (adaptive, which
+                    -- is per-query billed and has no idle concept).
+                    idle_policy VARCHAR,
                     query_num INTEGER NOT NULL,
                     run_num INTEGER NOT NULL,
                     run_type VARCHAR NOT NULL,
@@ -185,18 +197,26 @@ class BenchmarkStorage:
                 )
             """)
 
-            # Create run_metadata table to track wall clock time per platform/warehouse
+            # Create run_metadata table to track wall clock time per
+            # platform/warehouse-type/size combination. qtm is recorded but
+            # NOT part of the PK (gen1 has qtm=NULL, and PK columns must be
+            # NOT NULL). The convention is one main.py invocation = one run_id,
+            # so adaptive QTM=2 and QTM=8 land on separate run_ids and don't
+            # need qtm in the uniqueness key.
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS run_metadata (
                     run_id VARCHAR NOT NULL,
                     platform VARCHAR NOT NULL,
                     scenario VARCHAR NOT NULL,
+                    warehouse_type VARCHAR NOT NULL,
                     warehouse_size VARCHAR NOT NULL,
+                    qtm INTEGER,
+                    idle_policy VARCHAR NOT NULL DEFAULT 'n_a',
                     warehouse_name VARCHAR NOT NULL,
                     start_timestamp TIMESTAMP NOT NULL,
                     end_timestamp TIMESTAMP,
                     total_wall_clock_seconds DOUBLE,
-                    PRIMARY KEY (run_id, platform, scenario, warehouse_size)
+                    PRIMARY KEY (run_id, platform, scenario, warehouse_type, warehouse_size, idle_policy)
                 )
             """)
 
@@ -218,17 +238,22 @@ class BenchmarkStorage:
             conn.execute("""
                 INSERT INTO snowflake_results (
                     run_id, timestamp, platform, scenario,
-                    warehouse_name, warehouse_size, query_num, run_num,
+                    warehouse_type, warehouse_name, warehouse_size, qtm,
+                    idle_policy,
+                    query_num, run_num,
                     run_type, query_tag, query_id, execution_time_sec,
                     rows_produced, error_message, ctas_variant
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 result.get("run_id"),
                 result.get("timestamp"),
                 result.get("platform"),
                 result.get("scenario"),
+                result.get("warehouse_type"),
                 result.get("warehouse_name"),
                 result.get("warehouse_size"),
+                result.get("qtm"),
+                result.get("idle_policy", "n_a"),
                 result.get("query_num"),
                 result.get("run_num"),
                 result.get("run_type"),
@@ -430,13 +455,22 @@ class BenchmarkStorage:
             if result_dbx and result_dbx[0] is not None:
                 max_ids.append(result_dbx[0])
 
-            # Get next run ID
-            if max_ids:
-                max_run_id = max(max_ids)
-                next_run_id = max_run_id + 1
-                return f"{next_run_id:03d}"
-            else:
-                return "001"
+            # Per-track namespacing: when 3 tracks run concurrently they each
+            # have their OWN duckdb file, so each would otherwise start at 001
+            # and collide on merge. BENCHMARK_RUN_ID_BASE seeds a per-track
+            # numeric floor (e.g. adaptive=1000, gen1-tail=2000,
+            # gen1-notail=3000) so run_ids stay integer, globally ordered, and
+            # unique across tracks. First run in a track = base + 1.
+            try:
+                base = int(os.getenv("BENCHMARK_RUN_ID_BASE", "0"))
+            except ValueError:
+                base = 0
+
+            floor = max(max_ids) if max_ids else 0
+            floor = max(floor, base)
+            next_run_id = floor + 1
+            # Keep 3-digit padding for plain runs; bases push width naturally.
+            return f"{next_run_id:03d}"
 
         try:
             return self._execute_with_lock_retry("get next run_id", _get_next_run_id_operation)
@@ -466,24 +500,23 @@ class BenchmarkStorage:
         scenario: str,
         warehouse_size: str,
         warehouse_name: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
+        idle_policy: str = "n_a",
     ):
         """
-        Record the start of a benchmark run for a specific platform, scenario, and warehouse.
-
-        Args:
-            run_id: The run ID
-            platform: Platform name (e.g., "snowflake" or "databricks")
-            scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
-            warehouse_size: Warehouse size (e.g., "SMALL", "MEDIUM", "XLARGE")
-            warehouse_name: Full warehouse name
+        Record the start of a benchmark run for a specific platform/scenario/warehouse.
         """
         def _record_start_operation(conn):
             conn.execute("""
                 INSERT INTO run_metadata (
-                    run_id, platform, scenario, warehouse_size, warehouse_name, start_timestamp
+                    run_id, platform, scenario,
+                    warehouse_type, warehouse_size, qtm, idle_policy,
+                    warehouse_name, start_timestamp
                 )
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, [run_id, platform, scenario, warehouse_size, warehouse_name])
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, [run_id, platform, scenario, warehouse_type, warehouse_size,
+                  qtm, idle_policy, warehouse_name])
             return None
 
         self._execute_with_lock_retry("record run start", _record_start_operation)
@@ -494,15 +527,15 @@ class BenchmarkStorage:
         platform: str,
         scenario: str,
         warehouse_size: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
+        idle_policy: str = "n_a",
     ):
         """
         Record the end of a benchmark run and calculate total wall clock time.
 
-        Args:
-            run_id: The run ID
-            platform: Platform name (e.g., "snowflake" or "databricks")
-            scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
-            warehouse_size: Warehouse size (e.g., "SMALL", "MEDIUM", "XLARGE")
+        Matches the row keyed by (run_id, platform, scenario, warehouse_type,
+        warehouse_size, qtm) so adaptive QTM variants stay separated.
         """
         def _record_end_operation(conn):
             conn.execute("""
@@ -510,8 +543,15 @@ class BenchmarkStorage:
                 SET
                     end_timestamp = CURRENT_TIMESTAMP,
                     total_wall_clock_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - start_timestamp))
-                WHERE run_id = ? AND platform = ? AND scenario = ? AND warehouse_size = ?
-            """, [run_id, platform, scenario, warehouse_size])
+                WHERE run_id = ?
+                  AND platform = ?
+                  AND scenario = ?
+                  AND warehouse_type = ?
+                  AND warehouse_size = ?
+                  AND qtm IS NOT DISTINCT FROM ?
+                  AND idle_policy = ?
+            """, [run_id, platform, scenario, warehouse_type, warehouse_size,
+                  qtm, idle_policy])
             return None
 
         self._execute_with_lock_retry("record run end", _record_end_operation)

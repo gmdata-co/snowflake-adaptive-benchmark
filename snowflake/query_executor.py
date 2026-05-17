@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from common.logging_config import get_logger
 from common.storage import BenchmarkStorage
-from .config import QUERIES_DIR, APP_NAME, NUM_RUNS
+from .config import QUERIES_DIR, APP_NAME, NUM_RUNS, DML_TABLE, resolve_idle_policy
 
 logger = get_logger(__name__)
 
@@ -195,6 +195,8 @@ class QueryExecutor:
 
         # Replace the scale factor (e.g., TPCH_SF100 -> TPCH_SF1000)
         query_sql = query_sql.replace("TPCH_SF100", f"TPCH_SF{self.scale_factor}")
+        # Resolve the DML target table from config (DB/schema are env-driven)
+        query_sql = query_sql.replace("{{DML_TABLE}}", DML_TABLE)
 
         return query_sql
 
@@ -221,6 +223,8 @@ class QueryExecutor:
         warehouse_name: str,
         warehouse_size: str,
         scenario: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
         force_run_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -328,8 +332,10 @@ class QueryExecutor:
             "timestamp": timestamp,
             "platform": "snowflake",
             "scenario": scenario,
+            "warehouse_type": warehouse_type,
             "warehouse_name": warehouse_name,
             "warehouse_size": warehouse_size,
+            "qtm": qtm,
             "query_num": query_num,
             "run_num": run_num,
             "run_type": run_type,
@@ -338,6 +344,7 @@ class QueryExecutor:
             "execution_time_sec": round(execution_time, 3),
             "rows_produced": rows_produced,
             "error_message": error_message or "",
+            "idle_policy": resolve_idle_policy(warehouse_type),
         }
 
         # Log to DuckDB immediately
@@ -510,6 +517,8 @@ class QueryExecutor:
         warehouse_name: str,
         warehouse_size: str,
         scenario: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
         force_run_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -617,8 +626,10 @@ class QueryExecutor:
             "timestamp": timestamp,
             "platform": "snowflake",
             "scenario": scenario,
+            "warehouse_type": warehouse_type,
             "warehouse_name": warehouse_name,
             "warehouse_size": warehouse_size,
+            "qtm": qtm,
             "query_num": query_num,
             "run_num": run_num,
             "run_type": run_type,
@@ -628,6 +639,7 @@ class QueryExecutor:
             "rows_produced": rows_produced,
             "error_message": error_message or "",
             "ctas_variant": operation,  # Store operation type ('delete' or 'insert')
+            "idle_policy": resolve_idle_policy(warehouse_type),
         }
 
         # Log to DuckDB immediately

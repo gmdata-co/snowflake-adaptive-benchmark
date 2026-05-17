@@ -21,22 +21,47 @@ clean-targets:
 vars:
   # Filter run_summary to specific run_ids. Set to empty list [] for all runs.
   # Example: ['035', '038']
-  run_ids: ['035', '038', '039', '042', '040','044']
+  run_ids: []
 
 # Configuring models
+#
+# The legacy cross-platform (Snowflake vs Databricks) comparison models depend on
+# sources that the current adaptive-vs-gen1 pipeline does not generate
+# (snowflake_wh_usage, databricks_wh_usage, databricks_pricing, run_control).
+# They are kept on disk for future re-enablement (e.g., if Databricks
+# benchmarking is reactivated) but disabled here so `dbt build` succeeds today.
 models:
   benchmark_transformations:
-    # All models materialized as views by default
     +materialized: view
 
     base:
-      # Base models are simple passthroughs for documentation
       +materialized: view
 
     intermediate:
-      # Intermediate models for filtering and cost calculations
-      +materialized: view
+      # All intermediates reference removed sources — disabled until DBX side is rewired.
+      +enabled: false
 
     marts:
-      # Final reporting views
       +materialized: view
+      # New active model: adaptive_vs_gen1_summary (used by the chart).
+      # Everything below is the legacy cross-platform layer — disabled.
+      platform_comparison_latest:
+        +enabled: false
+      platform_comparison_normal:
+        +enabled: false
+      platform_comparison_coldstart:
+        +enabled: false
+      platform_comparison_all_runs:
+        +enabled: false
+      run_summary:
+        +enabled: false
+      run_summary_agg:
+        +enabled: false
+      run_summary_by_warehouse:
+        +enabled: false
+      run_summary_with_implied_costs:
+        +enabled: false
+      ctas_summary:
+        +enabled: false
+      query_details:
+        +enabled: false

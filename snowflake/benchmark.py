@@ -27,6 +27,9 @@ from .config import (
     NUM_QUERIES,
     SCALE_FACTOR,
     DUCKDB_PATH,
+    DEFAULT_QTM,
+    DML_TABLE,
+    resolve_idle_policy,
 )
 from .warehouse_manager import WarehouseManager
 from .query_executor import QueryExecutor
@@ -45,6 +48,8 @@ class SnowflakeBenchmark:
         connection_name: str = SNOWFLAKE_CONNECTION,
         scale_factor: int = SCALE_FACTOR,
         run_id: str = None,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
     ):
         """Initialize benchmark runner.
 
@@ -52,9 +57,17 @@ class SnowflakeBenchmark:
             connection_name: Name of connection from ~/.snowflake/connections.toml
             scale_factor: TPC-H scale factor (e.g., 100, 1000)
             run_id: Optional run ID to use (for parallel instances or unified scenarios)
+            warehouse_type: "gen1" or "adaptive" — controls CREATE WAREHOUSE syntax.
+            qtm: QUERY_THROUGHPUT_MULTIPLIER for adaptive warehouses (ignored for gen1).
         """
         self.connection_name = connection_name
         self.scale_factor = scale_factor
+        self.warehouse_type = warehouse_type
+        # Normalize: adaptive defaults to DEFAULT_QTM; gen1 always None.
+        if warehouse_type == "adaptive":
+            self.qtm = qtm if qtm is not None else DEFAULT_QTM
+        else:
+            self.qtm = None
 
         # Use SnowflakeConnection abstraction
         self.sf_connection = SnowflakeConnection(
@@ -64,6 +77,12 @@ class SnowflakeBenchmark:
             schema=SNOWFLAKE_SCHEMA,
         )
         self.conn: Optional[snowflake.connector.SnowflakeConnection] = None
+
+        # Idle/shutdown policy for this whole run, resolved once from
+        # warehouse_type + BENCHMARK_IMMEDIATE_DROP. Recorded as a real column
+        # on every result + run_metadata row so the dashboard toggle is driven
+        # by ground truth, not post-hoc run_id guessing.
+        self.idle_policy = resolve_idle_policy(warehouse_type)
 
         # Use global storage instance for DuckDB
         self.storage = storage
@@ -81,6 +100,16 @@ class SnowflakeBenchmark:
             Zero-padded 3-digit run ID (e.g., "001", "002", "003")
         """
         return self.storage.get_next_run_id()
+
+    def _run_start(self, *args, **kwargs):
+        """record_run_start with this run's idle_policy injected."""
+        kwargs.setdefault("idle_policy", self.idle_policy)
+        return getattr(self.storage, "record_run_start")(*args, **kwargs)
+
+    def _run_end(self, *args, **kwargs):
+        """record_run_end with this run's idle_policy injected."""
+        kwargs.setdefault("idle_policy", self.idle_policy)
+        return getattr(self.storage, "record_run_end")(*args, **kwargs)
 
     def connect(self):
         """Establish connection to Snowflake and initialize managers."""
@@ -135,12 +164,14 @@ class SnowflakeBenchmark:
         logger.info(f"[{warehouse_size.upper()}] Using warehouse: {warehouse_name}")
 
         # Record wall clock start time for this warehouse
-        self.storage.record_run_start(
+        self._run_start(
             run_id=self.run_id,
             platform="snowflake",
             scenario=scenario,
             warehouse_size=warehouse_size.upper(),
             warehouse_name=warehouse_name,
+            warehouse_type=self.warehouse_type,
+            qtm=self.qtm,
         )
 
         try:
@@ -157,6 +188,8 @@ class SnowflakeBenchmark:
                         warehouse_name=warehouse_name,
                         warehouse_size=warehouse_size.upper(),
                         scenario=scenario,
+                        warehouse_type=self.warehouse_type,
+                        qtm=self.qtm,
                     )
 
             logger.info(
@@ -168,11 +201,13 @@ class SnowflakeBenchmark:
             raise
         finally:
             # Record wall clock end time for this warehouse
-            self.storage.record_run_end(
+            self._run_end(
                 run_id=self.run_id,
                 platform="snowflake",
                 scenario=scenario,
                 warehouse_size=warehouse_size.upper(),
+                warehouse_type=self.warehouse_type,
+                qtm=self.qtm,
             )
 
     def run_cold_start_trial(
@@ -224,7 +259,7 @@ class SnowflakeBenchmark:
                 logger.info(f"[{warehouse_size.upper()}] Queries: {query_nums}")
 
                 # Record wall clock start time for this warehouse
-                self.storage.record_run_start(
+                self._run_start(
                     run_id=self.run_id,
                     platform="snowflake",
                     scenario=scenario,
@@ -264,7 +299,7 @@ class SnowflakeBenchmark:
                     )
                 finally:
                     # Record wall clock end time for this warehouse
-                    self.storage.record_run_end(
+                    self._run_end(
                         run_id=self.run_id,
                         platform="snowflake",
                         scenario=scenario,
@@ -289,8 +324,9 @@ class SnowflakeBenchmark:
         """
         Run concurrent benchmark: execute all queries in parallel on the same warehouse.
 
-        This measures performance under concurrent load by executing all queries
-        simultaneously using a multi-cluster warehouse.
+        For gen1, scales the warehouse with multi-cluster (MIN=1, MAX=4) and STANDARD
+        scaling policy. For adaptive, the QTM (set on the SnowflakeBenchmark instance)
+        controls concurrent throughput — multi-cluster does not apply.
 
         Args:
             warehouse_sizes: List of warehouse sizes to test (default: ["medium"])
@@ -308,22 +344,32 @@ class SnowflakeBenchmark:
         logger.info("=" * 70)
         logger.info(f"Run ID: {self.run_id}")
         logger.info(f"Scenario: {scenario}")
+        logger.info(f"Warehouse type: {self.warehouse_type}")
+        if self.warehouse_type == "adaptive":
+            logger.info(f"QTM: {self.qtm}")
         logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {query_nums} ({len(query_nums)} queries)")
         logger.info("Execution: All queries in parallel (concurrent)")
 
-        # Multi-cluster warehouse config for concurrent execution
-        # Scale up to handle parallel query load (Enterprise Edition required)
-        max_clusters = min(len(query_nums), 4)  # Cap at 4 clusters max
-        min_clusters = 1  # Start with 1, scale up as needed
-        logger.info(f"Warehouse: Multi-cluster (min: {min_clusters}, max: {max_clusters})")
+        # Multi-cluster only applies to gen1. Adaptive's QTM handles concurrency.
+        if self.warehouse_type == "gen1":
+            max_clusters = min(len(query_nums), 4)
+            min_clusters = 1
+            logger.info(
+                f"Warehouse: Multi-cluster gen1 (min: {min_clusters}, max: {max_clusters})"
+            )
+        else:
+            max_clusters = None
+            min_clusters = None
+            logger.info(f"Warehouse: Adaptive (QTM={self.qtm})")
         logger.info("=" * 70)
 
-        # Create multi-cluster warehouses for concurrent testing
         warehouse_map = self.warehouse_manager.create_all_warehouses(
             warehouse_sizes,
             scenario,
+            warehouse_type=self.warehouse_type,
+            qtm=self.qtm,
             max_cluster_count=max_clusters,
             min_cluster_count=min_clusters,
         )
@@ -341,12 +387,14 @@ class SnowflakeBenchmark:
                 )
 
                 # Record wall clock start time for this warehouse
-                self.storage.record_run_start(
+                self._run_start(
                     run_id=self.run_id,
                     platform="snowflake",
                     scenario=scenario,
                     warehouse_size=warehouse_size.upper(),
                     warehouse_name=warehouse_name,
+                    warehouse_type=self.warehouse_type,
+                    qtm=self.qtm,
                 )
 
                 # Create separate benchmark instances for each query
@@ -357,6 +405,8 @@ class SnowflakeBenchmark:
                         connection_name=self.connection_name,
                         scale_factor=self.scale_factor,
                         run_id=self.run_id,  # Share the same run_id
+                        warehouse_type=self.warehouse_type,
+                        qtm=self.qtm,
                     )
                     benchmark_instances.append(instance)
 
@@ -407,11 +457,13 @@ class SnowflakeBenchmark:
                     for instance in benchmark_instances:
                         instance.disconnect()
                     # Record wall clock end time for this warehouse
-                    self.storage.record_run_end(
+                    self._run_end(
                         run_id=self.run_id,
                         platform="snowflake",
                         scenario=scenario,
                         warehouse_size=warehouse_size.upper(),
+                        warehouse_type=self.warehouse_type,
+                        qtm=self.qtm,
                     )
 
                 logger.info(
@@ -436,16 +488,7 @@ class SnowflakeBenchmark:
         warehouse_size: str,
         scenario: str,
     ):
-        """
-        Execute a single query (helper for concurrent execution).
-
-        Args:
-            instance: SnowflakeBenchmark instance with its own connection
-            query_num: Query number to execute
-            warehouse_name: Name of the warehouse to use
-            warehouse_size: Warehouse size key
-            scenario: Scenario name
-        """
+        """Execute a single query (helper for concurrent execution)."""
         # Switch to the warehouse
         instance.warehouse_manager.switch_warehouse(warehouse_name)
 
@@ -456,6 +499,8 @@ class SnowflakeBenchmark:
             warehouse_name=warehouse_name,
             warehouse_size=warehouse_size.upper(),
             scenario=scenario,
+            warehouse_type=instance.warehouse_type,
+            qtm=instance.qtm,
         )
 
     def run_ctas_benchmark(
@@ -511,7 +556,7 @@ class SnowflakeBenchmark:
                 )
 
                 # Record wall clock start time for this warehouse
-                self.storage.record_run_start(
+                self._run_start(
                     run_id=self.run_id,
                     platform="snowflake",
                     scenario=scenario,
@@ -552,7 +597,7 @@ class SnowflakeBenchmark:
 
                 finally:
                     # Record wall clock end time for this warehouse
-                    self.storage.record_run_end(
+                    self._run_end(
                         run_id=self.run_id,
                         platform="snowflake",
                         scenario=scenario,
@@ -629,21 +674,28 @@ class SnowflakeBenchmark:
             """)
 
             # Switch back to benchmark role for data operations
-            cursor.execute("USE ROLE BENCHMARK")
+            cursor.execute(f"USE ROLE {SNOWFLAKE_ROLE}")
             cursor.execute(f"USE WAREHOUSE {setup_warehouse_name}")
             logger.info(f"   Using setup warehouse: {setup_warehouse_name}")
 
+            # Ensure the target database + schema exist (env-driven, not hardcoded).
+            # DML_TABLE looks like "<DB>.<SCHEMA>.LINEITEM_DML".
+            db_name, schema_name, _ = DML_TABLE.split(".")
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {db_name}.{schema_name}")
+            logger.info(f"   Ensured {db_name}.{schema_name} exists")
+
             # Drop existing table to ensure clean state
-            cursor.execute("DROP TABLE IF EXISTS BENCHMARK.BENCHMARK.LINEITEM_DML")
-            logger.info("   Dropped existing LINEITEM_DML table (if any)")
+            cursor.execute(f"DROP TABLE IF EXISTS {DML_TABLE}")
+            logger.info(f"   Dropped existing {DML_TABLE} (if any)")
 
             # CTAS from source - can't use CLONE because source is from a data share
-            logger.info(f"   Creating LINEITEM_DML via CTAS from SF{self.scale_factor} (this may take several minutes)...")
+            logger.info(f"   Creating {DML_TABLE} via CTAS from SF{self.scale_factor} (this may take several minutes)...")
             cursor.execute(f"""
-                CREATE TABLE BENCHMARK.BENCHMARK.LINEITEM_DML AS
+                CREATE TABLE {DML_TABLE} AS
                 SELECT * FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF{self.scale_factor}.LINEITEM
             """)
-            logger.info("   Created fresh LINEITEM_DML table from source")
+            logger.info(f"   Created fresh {DML_TABLE} from source")
 
         except Exception as e:
             logger.error(f"   Failed to set up DML table: {e}")
@@ -654,7 +706,7 @@ class SnowflakeBenchmark:
                 cursor.execute("USE ROLE SYSADMIN")
                 cursor.execute(f"DROP WAREHOUSE IF EXISTS {setup_warehouse_name}")
                 logger.info(f"   Destroyed setup warehouse: {setup_warehouse_name}")
-                cursor.execute("USE ROLE BENCHMARK")
+                cursor.execute(f"USE ROLE {SNOWFLAKE_ROLE}")
             except Exception as e:
                 logger.warning(f"   Failed to destroy setup warehouse: {e}")
             cursor.close()
@@ -686,6 +738,9 @@ class SnowflakeBenchmark:
         logger.info("=" * 70)
         logger.info(f"Run ID: {self.run_id}")
         logger.info(f"Scenario: {scenario}")
+        logger.info(f"Warehouse type: {self.warehouse_type}")
+        if self.warehouse_type == "adaptive":
+            logger.info(f"QTM: {self.qtm}")
         logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Operations: {', '.join(operations)}")
@@ -698,7 +753,10 @@ class SnowflakeBenchmark:
 
         # Create benchmark warehouses with scenario in name
         warehouse_map = self.warehouse_manager.create_all_warehouses(
-            warehouse_sizes, scenario
+            warehouse_sizes,
+            scenario,
+            warehouse_type=self.warehouse_type,
+            qtm=self.qtm,
         )
 
         try:
@@ -711,12 +769,14 @@ class SnowflakeBenchmark:
                 )
 
                 # Record wall clock start time for this warehouse
-                self.storage.record_run_start(
+                self._run_start(
                     run_id=self.run_id,
                     platform="snowflake",
                     scenario=scenario,
                     warehouse_size=warehouse_size.upper(),
                     warehouse_name=warehouse_name,
+                    warehouse_type=self.warehouse_type,
+                    qtm=self.qtm,
                 )
 
                 try:
@@ -734,6 +794,8 @@ class SnowflakeBenchmark:
                             warehouse_name=warehouse_name,
                             warehouse_size=warehouse_size.upper(),
                             scenario=scenario,
+                            warehouse_type=self.warehouse_type,
+                            qtm=self.qtm,
                         )
 
                     logger.info(
@@ -742,11 +804,13 @@ class SnowflakeBenchmark:
 
                 finally:
                     # Record wall clock end time for this warehouse
-                    self.storage.record_run_end(
+                    self._run_end(
                         run_id=self.run_id,
                         platform="snowflake",
                         scenario=scenario,
                         warehouse_size=warehouse_size.upper(),
+                        warehouse_type=self.warehouse_type,
+                        qtm=self.qtm,
                     )
 
         finally:
@@ -775,7 +839,7 @@ class SnowflakeBenchmark:
             num_runs: Number of runs per query (default: 4)
             parallel: If True, run warehouses in parallel (default: True)
         """
-        scenario = "normal"
+        scenario = "sequential"
 
         # Default to medium warehouse only (use --warehouse flag for multiple sizes)
         if warehouse_sizes is None:
@@ -788,6 +852,9 @@ class SnowflakeBenchmark:
         logger.info("=" * 70)
         logger.info(f"Run ID: {self.run_id}")
         logger.info(f"Scenario: {scenario}")
+        logger.info(f"Warehouse type: {self.warehouse_type}")
+        if self.warehouse_type == "adaptive":
+            logger.info(f"QTM: {self.qtm}")
         logger.info(f"Scale Factor: SF{self.scale_factor} (~{self.scale_factor}GB)")
         logger.info(f"Warehouses: {', '.join(warehouse_sizes)}")
         logger.info(f"Queries: {len(query_nums)} queries")
@@ -801,7 +868,10 @@ class SnowflakeBenchmark:
 
         # Create warehouses with scenario in name
         warehouse_map = self.warehouse_manager.create_all_warehouses(
-            warehouse_sizes, scenario
+            warehouse_sizes,
+            scenario,
+            warehouse_type=self.warehouse_type,
+            qtm=self.qtm,
         )
 
         try:
@@ -831,6 +901,8 @@ class SnowflakeBenchmark:
                         connection_name=self.connection_name,
                         scale_factor=self.scale_factor,
                         run_id=self.run_id,  # Share the same run_id
+                        warehouse_type=self.warehouse_type,
+                        qtm=self.qtm,
                     )
                     # Share warehouse manager's created list for cleanup
                     benchmark_instances[warehouse_size] = instance
@@ -884,10 +956,10 @@ class SnowflakeBenchmark:
         logger.info(f"Results saved to: {DUCKDB_PATH}")
         logger.info(f"Run ID: {self.run_id}")
         logger.info("\nNext steps:")
-        logger.info("1. Wait 45 minutes for ACCOUNT_USAGE to populate")
+        logger.info("1. Wait ~90 minutes for ACCOUNT_USAGE to populate")
         logger.info("2. Run: uv run snowflake/enrich_results.py")
         logger.info("3. Run: uv run common/transformations/run_transformations.py")
-        logger.info("4. Query results: SELECT * FROM platform_comparison;")
+        logger.info("4. Query results: SELECT * FROM run_summary_agg;")
 
 
 def main():
@@ -895,9 +967,23 @@ def main():
     parser = argparse.ArgumentParser(description="Run Snowflake TPC-H Benchmark")
     parser.add_argument(
         "--warehouse",
-        choices=["small", "medium", "xlarge"],
+        choices=["small", "medium", "large", "xlarge"],
         action="append",
         help="Warehouse size(s) to test (can specify multiple times). Default: medium",
+    )
+    parser.add_argument(
+        "--warehouse-type",
+        choices=["gen1", "adaptive"],
+        default="gen1",
+        help="Warehouse generation: 'gen1' (pins GENERATION='1') or 'adaptive' "
+             "(CREATE ADAPTIVE WAREHOUSE with QTM). Default: gen1.",
+    )
+    parser.add_argument(
+        "--qtm",
+        type=int,
+        default=DEFAULT_QTM,
+        help=f"QUERY_THROUGHPUT_MULTIPLIER for adaptive warehouses "
+             f"(default: {DEFAULT_QTM}). Ignored when --warehouse-type=gen1.",
     )
     parser.add_argument(
         "--queries",
@@ -919,19 +1005,19 @@ def main():
     parser.add_argument(
         "--sequential",
         action="store_true",
-        help="Run warehouses sequentially instead of in parallel. Queries always run sequentially within each warehouse (default: parallel warehouses)",
+        help="Run warehouses sequentially instead of in parallel.",
     )
     parser.add_argument(
         "--scale-factor",
         type=int,
         default=SCALE_FACTOR,
-        help=f"TPC-H scale factor (default: {SCALE_FACTOR}). Common values: 1000 (1TB), 10000 (10TB)",
+        help=f"TPC-H scale factor (default: {SCALE_FACTOR}). SF100 = ~600M LINEITEM rows.",
     )
     parser.add_argument(
         "--scenario",
-        choices=["normal", "coldstart"],
-        default="normal",
-        help="Scenario to run (default: normal)",
+        choices=["sequential", "concurrent", "dml"],
+        default="sequential",
+        help="Scenario to run (default: sequential)",
     )
 
     args = parser.parse_args()
@@ -943,20 +1029,23 @@ def main():
 
     # Create benchmark instance
     benchmark = SnowflakeBenchmark(
-        connection_name=args.connection, scale_factor=args.scale_factor
+        connection_name=args.connection,
+        scale_factor=args.scale_factor,
+        warehouse_type=args.warehouse_type,
+        qtm=args.qtm,
     )
 
     # Connect
     benchmark.connect()
 
     try:
-        if args.scenario == "coldstart":
-            # Run cold start trial
-            benchmark.run_cold_start_trial(
+        if args.scenario == "concurrent":
+            benchmark.run_concurrent_benchmark(
                 warehouse_sizes=args.warehouse, query_nums=query_nums
             )
+        elif args.scenario == "dml":
+            benchmark.run_dml_benchmark(warehouse_sizes=args.warehouse)
         else:
-            # Run normal benchmark
             benchmark.run_benchmark(
                 warehouse_sizes=args.warehouse,
                 query_nums=query_nums,

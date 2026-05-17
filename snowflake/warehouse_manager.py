@@ -5,7 +5,9 @@ Snowflake Warehouse Manager
 Manages warehouse lifecycle for benchmarks: creation, destruction, suspension, resumption.
 """
 
-from typing import List, Dict
+import os
+import time
+from typing import List, Dict, Optional
 from common.logging_config import get_logger
 from .config import (
     SNOWFLAKE_ROLE,
@@ -14,6 +16,7 @@ from .config import (
     WAREHOUSE_AUTO_SUSPEND,
     WAREHOUSE_AUTO_RESUME,
     WAREHOUSE_INITIALLY_SUSPENDED,
+    DEFAULT_QTM,
 )
 
 logger = get_logger(__name__)
@@ -34,20 +37,32 @@ class WarehouseManager:
         self.run_id = run_id
         self.created_warehouses: List[str] = []  # Track for cleanup
 
-    def get_warehouse_name(self, warehouse_size: str, scenario: str) -> str:
+    def get_warehouse_name(
+        self,
+        warehouse_size: str,
+        scenario: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
+    ) -> str:
         """
-        Generate warehouse name with scenario and run_id suffix.
+        Generate warehouse name with type/size/scenario/QTM/run_id segments.
 
-        Args:
-            warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
-            scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
+        Each variant (different QTM, size, type) must resolve to a unique name so
+        Snowflake's WAREHOUSE_METERING_HISTORY and per-query credit attribution
+        produce isolated billing records per variant.
 
         Returns:
-            Full warehouse name (e.g., "BENCHMARK_WH_MEDIUM_NORMAL_001")
+            e.g. "BENCHMARK_WH_ADAPTIVE_MEDIUM_CONCURRENT_QTM8_001"
+                 "BENCHMARK_WH_GEN1_MEDIUM_SEQUENTIAL_001"
         """
         size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
+        type_upper = warehouse_type.upper()
         scenario_upper = scenario.upper()
-        return f"{WAREHOUSE_PREFIX}_{size_upper}_{scenario_upper}_{self.run_id}"
+        parts = [WAREHOUSE_PREFIX, type_upper, size_upper, scenario_upper]
+        if warehouse_type == "adaptive" and qtm is not None:
+            parts.append(f"QTM{qtm}")
+        parts.append(self.run_id)
+        return "_".join(parts)
 
     def _execute(self, sql: str):
         """
@@ -60,10 +75,60 @@ class WarehouseManager:
         cursor.execute(sql)
         cursor.close()
 
+    def _query(self, sql: str):
+        """Execute SQL and return all rows."""
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(sql)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def _warehouse_state(self, warehouse_name: str) -> Optional[str]:
+        """Return the current state string (e.g. 'STARTED', 'SUSPENDED') or None."""
+        rows = self._query(f"SHOW WAREHOUSES LIKE '{warehouse_name}'")
+        if not rows:
+            return None
+        # SHOW WAREHOUSES column order is stable: name=[0], state=[1].
+        return rows[0][1]
+
+    def _wait_until_suspended(self, warehouse_name: str, timeout: int = 180):
+        """
+        Block until a gen1 warehouse auto-suspends, so its idle tail is billed
+        into WAREHOUSE_METERING_HISTORY before we drop it.
+
+        Real users do not drop a warehouse the instant a query finishes — it
+        sits idle until AUTO_SUSPEND fires, and that idle time is real spend.
+        Dropping immediately hides it; waiting captures it.
+
+        Polls SHOW WAREHOUSES until state == 'SUSPENDED' or `timeout` seconds
+        elapse (then drops anyway so cleanup never hangs forever).
+        """
+        deadline = time.time() + timeout
+        logger.info(
+            f"⏳ Waiting for {warehouse_name} to auto-suspend before drop "
+            f"(captures idle billing tail)..."
+        )
+        while time.time() < deadline:
+            state = self._warehouse_state(warehouse_name)
+            if state is None:
+                logger.info(f"{warehouse_name} no longer exists; nothing to wait for.")
+                return
+            if str(state).upper() == "SUSPENDED":
+                logger.info(f"✅ {warehouse_name} is SUSPENDED; idle tail captured.")
+                return
+            time.sleep(10)
+        logger.warning(
+            f"⚠️  {warehouse_name} did not reach SUSPENDED within {timeout}s; "
+            f"dropping anyway."
+        )
+
     def create_warehouse(
         self,
         warehouse_size: str,
         scenario: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
         max_cluster_count: int = None,
         min_cluster_count: int = None,
     ) -> str:
@@ -72,48 +137,65 @@ class WarehouseManager:
 
         Args:
             warehouse_size: Warehouse size key (e.g., "small", "medium", "xlarge")
-            scenario: Scenario name (e.g., "normal", "coldstart", "concurrent")
-            max_cluster_count: Maximum number of clusters for multi-cluster warehouse (optional)
-            min_cluster_count: Minimum number of clusters for multi-cluster warehouse (optional)
-
-        Returns:
-            Name of the created warehouse
+            scenario: Scenario name (e.g., "sequential", "concurrent", "dml")
+            warehouse_type: "gen1" (pins GENERATION='1') or "adaptive"
+                            (uses CREATE ADAPTIVE WAREHOUSE).
+            qtm: QUERY_THROUGHPUT_MULTIPLIER, adaptive only. Defaults to DEFAULT_QTM.
+            max_cluster_count: Multi-cluster max (gen1 only).
+            min_cluster_count: Multi-cluster min (gen1 only).
         """
-        warehouse_name = self.get_warehouse_name(warehouse_size, scenario)
+        if warehouse_type not in ("gen1", "adaptive"):
+            raise ValueError(f"Unknown warehouse_type: {warehouse_type!r}")
+
+        if warehouse_type == "adaptive" and qtm is None:
+            qtm = DEFAULT_QTM
+
+        warehouse_name = self.get_warehouse_name(
+            warehouse_size, scenario, warehouse_type, qtm
+        )
         size_upper = WAREHOUSE_SIZE_MAP[warehouse_size]
 
-        cluster_info = ""
-        if max_cluster_count:
-            cluster_info = f" (size: {size_upper}, max_clusters: {max_cluster_count})"
+        if warehouse_type == "adaptive":
+            info = f" (adaptive, perf_level: {size_upper}, qtm: {qtm})"
+        elif max_cluster_count:
+            info = f" (gen1, size: {size_upper}, max_clusters: {max_cluster_count})"
         else:
-            cluster_info = f" (size: {size_upper})"
+            info = f" (gen1, size: {size_upper})"
+        logger.info(f"Creating warehouse: {warehouse_name}{info}")
 
-        logger.info(f"Creating warehouse: {warehouse_name}{cluster_info}")
-
-        # Need to use SYSADMIN role to create warehouse
+        # SYSADMIN required to create warehouses
         self._execute("USE ROLE SYSADMIN")
 
-        create_sql = f"""CREATE WAREHOUSE IF NOT EXISTS {warehouse_name}
-            WITH
-            WAREHOUSE_SIZE = '{size_upper}'
-            AUTO_SUSPEND = {WAREHOUSE_AUTO_SUSPEND}
-            AUTO_RESUME = {str(WAREHOUSE_AUTO_RESUME).upper()}
-            INITIALLY_SUSPENDED = {str(WAREHOUSE_INITIALLY_SUSPENDED).upper()}"""
-
-        # Add multi-cluster configuration if specified
-        if max_cluster_count is not None:
-            create_sql += f"""
-            MAX_CLUSTER_COUNT = {max_cluster_count}"""
-        if min_cluster_count is not None:
-            create_sql += f"""
-            MIN_CLUSTER_COUNT = {min_cluster_count}"""
-        if max_cluster_count is not None:
-            # Use STANDARD scaling policy for concurrent benchmarks
-            create_sql += """
-            SCALING_POLICY = 'STANDARD'"""
-
-        create_sql += f"""
-            COMMENT = 'Ephemeral warehouse for benchmark run {self.run_id} scenario {scenario}'"""
+        if warehouse_type == "adaptive":
+            create_sql = (
+                f"CREATE ADAPTIVE WAREHOUSE IF NOT EXISTS {warehouse_name}\n"
+                f"    MAX_QUERY_PERFORMANCE_LEVEL = '{size_upper}'\n"
+                f"    QUERY_THROUGHPUT_MULTIPLIER = {qtm}\n"
+                f"    COMMENT = 'Adaptive benchmark warehouse run {self.run_id} "
+                f"scenario {scenario} qtm={qtm}'"
+            )
+        else:
+            create_sql = (
+                f"CREATE WAREHOUSE IF NOT EXISTS {warehouse_name}\n"
+                f"    WITH\n"
+                f"    WAREHOUSE_SIZE = '{size_upper}'\n"
+                # Pin Gen1 explicitly — Snowflake's default for new warehouses
+                # transitioned to Gen2 across most regions in mid-2025.
+                f"    GENERATION = '1'\n"
+                f"    AUTO_SUSPEND = {WAREHOUSE_AUTO_SUSPEND}\n"
+                f"    AUTO_RESUME = {str(WAREHOUSE_AUTO_RESUME).upper()}\n"
+                f"    INITIALLY_SUSPENDED = {str(WAREHOUSE_INITIALLY_SUSPENDED).upper()}"
+            )
+            if max_cluster_count is not None:
+                create_sql += f"\n    MAX_CLUSTER_COUNT = {max_cluster_count}"
+            if min_cluster_count is not None:
+                create_sql += f"\n    MIN_CLUSTER_COUNT = {min_cluster_count}"
+            if max_cluster_count is not None:
+                create_sql += "\n    SCALING_POLICY = 'STANDARD'"
+            create_sql += (
+                f"\n    COMMENT = 'Gen1 benchmark warehouse run {self.run_id} "
+                f"scenario {scenario}'"
+            )
 
         self._execute(create_sql)
 
@@ -138,6 +220,29 @@ class WarehouseManager:
         """
         logger.info(f"Destroying warehouse: {warehouse_name}")
 
+        # Gen1 bills an idle tail until AUTO_SUSPEND fires. Adaptive is a
+        # query-billed pool with no idle/suspend concept, so only gen1 waits.
+        #
+        # BENCHMARK_IMMEDIATE_DROP=1 models the opposite "no idle time" policy:
+        # drop the warehouse the instant the workload finishes so no idle tail
+        # is ever billed. Used to produce the immediate-drop data series
+        # alongside the realistic wait-for-suspend series.
+        immediate_drop = os.getenv("BENCHMARK_IMMEDIATE_DROP", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if immediate_drop and "_GEN1_" in warehouse_name.upper():
+            logger.info(
+                f"BENCHMARK_IMMEDIATE_DROP set: dropping {warehouse_name} "
+                f"immediately (no idle tail captured)."
+            )
+        if not immediate_drop and "_GEN1_" in warehouse_name.upper():
+            try:
+                self._wait_until_suspended(warehouse_name)
+            except Exception as e:
+                logger.error(f"❌ Wait-for-suspend failed for {warehouse_name}: {e}")
+
         try:
             drop_sql = f"DROP WAREHOUSE IF EXISTS {warehouse_name}"
             self._execute(drop_sql)
@@ -149,29 +254,33 @@ class WarehouseManager:
         self,
         warehouse_sizes: List[str],
         scenario: str,
+        warehouse_type: str = "gen1",
+        qtm: Optional[int] = None,
         max_cluster_count: int = None,
         min_cluster_count: int = None,
     ) -> Dict[str, str]:
         """
         Create all warehouses needed for this benchmark run.
 
-        Args:
-            warehouse_sizes: List of warehouse size keys to create
-            scenario: Scenario name for warehouse naming
-            max_cluster_count: Maximum number of clusters for multi-cluster warehouse (optional)
-            min_cluster_count: Minimum number of clusters for multi-cluster warehouse (optional)
-
-        Returns:
-            Dictionary mapping warehouse size to warehouse name
+        Returns dict mapping warehouse_size -> warehouse_name.
         """
         logger.info("\n" + "=" * 70)
-        logger.info(f"CREATING WAREHOUSES FOR SCENARIO: {scenario.upper()}")
+        type_label = warehouse_type.upper()
+        qtm_label = f" QTM={qtm}" if warehouse_type == "adaptive" and qtm is not None else ""
+        logger.info(
+            f"CREATING {type_label} WAREHOUSES FOR SCENARIO: {scenario.upper()}{qtm_label}"
+        )
         logger.info("=" * 70)
 
         warehouse_map = {}
         for warehouse_size in warehouse_sizes:
             warehouse_name = self.create_warehouse(
-                warehouse_size, scenario, max_cluster_count, min_cluster_count
+                warehouse_size,
+                scenario,
+                warehouse_type=warehouse_type,
+                qtm=qtm,
+                max_cluster_count=max_cluster_count,
+                min_cluster_count=min_cluster_count,
             )
             warehouse_map[warehouse_size] = warehouse_name
 

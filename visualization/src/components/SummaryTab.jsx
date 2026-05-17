@@ -453,20 +453,29 @@ export function SummaryTab({ snowCreditPrice, dbxDbuPrice, onNavigateToDetails }
     }));
   }, [rawComparisons, snowCreditPrice, dbxDbuPrice]);
 
-  // Group comparisons by scenario - order: sequential, concurrent, cold, ctas, dml
+  // Group comparisons by scenario, deriving the panel list from the data so
+  // adaptive QTM variants (e.g. concurrent_qtm2, concurrent_qtm8) each render
+  // as their own panel. Ordering: sequential first, then concurrent variants,
+  // then dml, with anything else after.
   const groupedByScenario = useMemo(() => {
-    const scenarios = ['normal', 'concurrent', 'coldstart', 'ctas', 'dml'];
-    const scenarioLabels = {
-      normal: '22 Sequential Queries',
-      concurrent: '22 Concurrent Queries',
-      coldstart: '5 Cold Start Queries',
-      ctas: '5 CTAS Queries',
-      dml: 'DML Refresh',
+    const labelsById = {};
+    for (const c of comparisons) {
+      if (c.scenario && c.scenarioLabel) labelsById[c.scenario] = c.scenarioLabel;
+    }
+    const scenarioOrder = (id) => {
+      if (id === 'sequential') return 0;
+      if (id.startsWith('concurrent')) return 1;
+      if (id === 'dml') return 2;
+      return 3;
     };
+    const scenarios = Object.keys(labelsById).sort((a, b) => {
+      const o = scenarioOrder(a) - scenarioOrder(b);
+      return o !== 0 ? o : a.localeCompare(b);
+    });
 
     return scenarios.map(scenario => ({
       scenario,
-      scenarioLabel: scenarioLabels[scenario],
+      scenarioLabel: labelsById[scenario],
       comparisons: comparisons
         .filter(c => c.scenario === scenario)
         .sort((a, b) => a.warehouseTier - b.warehouseTier),

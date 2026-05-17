@@ -2,11 +2,26 @@
 """
 Enrich Benchmark Results with ACCOUNT_USAGE Data
 
-Queries SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY to get detailed metrics
-for all unenriched queries in the DuckDB database.
+For every unenriched query in DuckDB, pulls two things from Snowflake:
 
-NOTE: Run this script at least 45 minutes after the benchmark completes
-to ensure ACCOUNT_USAGE has been populated.
+  1. Per-query metrics from ACCOUNT_USAGE.QUERY_HISTORY (compilation/queued
+     times, bytes scanned, cloud services credits, total elapsed time).
+  2. Compute credits attributed to each query — allocated proportionally
+     by total_elapsed_time from ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY,
+     scoped to the warehouse the query ran on.
+
+Per-query compute credits are NOT directly available in QUERY_HISTORY for
+either gen1 standard or adaptive warehouses. WAREHOUSE_METERING_HISTORY is
+the authoritative compute-cost source. We attribute proportionally by elapsed
+time, which is the standard Snowflake chargeback pattern.
+
+Because each benchmark variant (gen1 vs adaptive, each QTM, each size) runs
+on its OWN uniquely-named warehouse, the metering rows attribute cleanly to
+the variant without smearing.
+
+NOTE: Run this at least ~90 minutes after the benchmark completes. ACCOUNT_USAGE
+latency is documented as ~45 min but can stretch longer; adaptive billing may
+take longer to settle than gen1.
 """
 
 import argparse
@@ -46,20 +61,29 @@ class ResultsEnricher:
         self.storage = BenchmarkStorage(DUCKDB_PATH)
 
     def _load_connection_config(self, connection_name: str) -> dict:
-        """Load connection configuration from ~/.snowflake/connections.toml"""
-        connections_file = Path.home() / ".snowflake" / "connections.toml"
-        if not connections_file.exists():
+        """Load connection config from ~/.snowflake/connections.toml or config.toml."""
+        snowflake_dir = Path.home() / ".snowflake"
+        connections_file = snowflake_dir / "connections.toml"
+        config_file = snowflake_dir / "config.toml"
+
+        if connections_file.exists():
+            config = toml.load(connections_file)
+            if connection_name in config:
+                return config[connection_name]
+
+        if config_file.exists():
+            config = toml.load(config_file)
+            nested = config.get("connections", {})
+            if connection_name in nested:
+                return nested[connection_name]
+
+        if not connections_file.exists() and not config_file.exists():
             raise FileNotFoundError(
-                f"Snowflake connections file not found: {connections_file}"
+                f"Snowflake config not found at {connections_file} or {config_file}"
             )
-
-        config = toml.load(connections_file)
-        if connection_name not in config:
-            raise ValueError(
-                f"Connection '{connection_name}' not found in {connections_file}"
-            )
-
-        return config[connection_name]
+        raise ValueError(
+            f"Connection '{connection_name}' not found in connections.toml or config.toml"
+        )
 
     def _load_private_key(self, private_key_path: str):
         """Load and decode the private key for JWT authentication."""
@@ -115,16 +139,12 @@ class ResultsEnricher:
             logger.info("✅ Disconnected from Snowflake")
 
     def get_unenriched_queries(self) -> List[Dict[str, Any]]:
-        """
-        Get all unenriched queries from DuckDB.
-
-        Returns:
-            List of query dictionaries with query_id and metadata
-        """
+        """Get all unenriched queries from DuckDB, including warehouse_name so
+        we can allocate compute credits per warehouse later."""
         logger.info("\nFetching unenriched queries from DuckDB...")
 
         results = self.storage.query("""
-            SELECT query_id, run_id, query_num, run_num
+            SELECT query_id, run_id, query_num, run_num, warehouse_name
             FROM snowflake_results
             WHERE query_id IS NOT NULL
             AND query_id != ''
@@ -139,10 +159,54 @@ class ResultsEnricher:
                 'run_id': row[1],
                 'query_num': row[2],
                 'run_num': row[3],
+                'warehouse_name': row[4],
             })
 
         logger.info(f"✅ Found {len(queries)} unenriched queries")
         return queries
+
+    def get_warehouse_metering_credits(
+        self, warehouse_names: List[str]
+    ) -> Dict[str, float]:
+        """
+        Fetch total compute credits per warehouse from WAREHOUSE_METERING_HISTORY.
+
+        WAREHOUSE_METERING_HISTORY reports actual billed compute credits
+        (credits_used_compute) per warehouse per hour. We sum across all hour
+        buckets for the warehouse to get its total billed compute, then later
+        allocate to queries proportionally by total_elapsed_time.
+
+        For adaptive warehouses this view is still authoritative; per-query
+        compute credit columns are not exposed in QUERY_HISTORY.
+        """
+        if not warehouse_names:
+            return {}
+
+        names_list = "', '".join(warehouse_names)
+        sql = f"""
+        SELECT warehouse_name,
+               SUM(credits_used_compute) AS total_compute_credits
+        FROM snowflake.account_usage.warehouse_metering_history
+        WHERE warehouse_name IN ('{names_list}')
+        GROUP BY warehouse_name
+        """
+        logger.info(
+            f"\nQuerying WAREHOUSE_METERING_HISTORY for {len(warehouse_names)} warehouses..."
+        )
+        cursor = self.conn.cursor(DictCursor)
+        cursor.execute(sql)
+        results = cursor.fetchall()
+        credits_by_wh = {
+            row['WAREHOUSE_NAME']: float(row['TOTAL_COMPUTE_CREDITS'] or 0.0)
+            for row in results
+        }
+        logger.info(f"✅ Retrieved metering rows for {len(credits_by_wh)} warehouses")
+        missing = set(warehouse_names) - set(credits_by_wh)
+        if missing:
+            logger.warning(
+                f"⚠ {len(missing)} warehouses have no metering rows yet: {sorted(missing)[:3]}..."
+            )
+        return credits_by_wh
 
     def get_query_history_data(self, query_ids: List[str]) -> Dict[str, Dict]:
         """
@@ -211,10 +275,7 @@ class ResultsEnricher:
         return history_dict
 
     def enrich_all(self):
-        """
-        Main enrichment workflow - enriches all unenriched queries in DuckDB.
-        """
-        # Get all unenriched queries
+        """Main enrichment workflow — enriches all unenriched queries in DuckDB."""
         queries = self.get_unenriched_queries()
 
         if not queries:
@@ -222,26 +283,36 @@ class ResultsEnricher:
             return 0
 
         query_ids = [q['query_id'] for q in queries]
+        warehouse_names = sorted({q['warehouse_name'] for q in queries if q.get('warehouse_name')})
 
-        # Get ACCOUNT_USAGE data
         history_dict = self.get_query_history_data(query_ids)
+        wh_credits = self.get_warehouse_metering_credits(warehouse_names)
 
         if not history_dict:
             logger.warning("\n⚠ Warning: No data retrieved from ACCOUNT_USAGE")
             logger.warning(
-                "Please wait at least 45 minutes after benchmark completion before running enrichment."
-            )
-            logger.warning(
-                "Your queries are in the database but enrichment data is not yet available."
+                "Please wait at least 90 minutes after benchmark completion."
             )
             return 0
 
-        # Update DuckDB with enriched data
+        # Allocate compute credits to queries by proportional elapsed time
+        # per warehouse. Build elapsed-time totals first, then divide.
+        elapsed_by_wh: Dict[str, float] = {}
+        for q in queries:
+            wh = q.get('warehouse_name')
+            hist = history_dict.get(q['query_id'])
+            if not wh or not hist:
+                continue
+            elapsed_by_wh[wh] = elapsed_by_wh.get(wh, 0.0) + float(
+                hist.get('total_elapsed_time_ms') or 0.0
+            )
+
         logger.info("\nUpdating DuckDB with enriched data...")
         enriched_count = 0
 
         for query in queries:
             query_id = query['query_id']
+            wh = query.get('warehouse_name')
 
             if query_id not in history_dict:
                 logger.warning(f"  Skipping {query_id} - not found in ACCOUNT_USAGE")
@@ -249,13 +320,23 @@ class ResultsEnricher:
 
             history = history_dict[query_id]
 
+            # Proportional compute-credit allocation: this query's share of
+            # the warehouse's elapsed time, multiplied by the warehouse's
+            # total billed compute credits.
+            credits_compute = None
+            wh_total_credits = wh_credits.get(wh)
+            wh_total_elapsed = elapsed_by_wh.get(wh, 0.0)
+            this_elapsed = float(history.get('total_elapsed_time_ms') or 0.0)
+            if wh_total_credits is not None and wh_total_elapsed > 0:
+                credits_compute = wh_total_credits * (this_elapsed / wh_total_elapsed)
+
             try:
                 self.storage.update_enrichment_data(
                     query_id=query_id,
                     compilation_time_ms=history.get('compilation_time_ms'),
                     queued_time_ms=history.get('queued_time_ms'),
                     bytes_scanned=history.get('bytes_scanned'),
-                    credits_used_compute=None,  # Not available in ACCOUNT_USAGE
+                    credits_used_compute=credits_compute,
                     credits_used_cloud_services=history.get('credits_used_cloud_services'),
                     total_elapsed_time_ms=history.get('total_elapsed_time_ms'),
                 )
@@ -266,10 +347,7 @@ class ResultsEnricher:
                 continue
 
         logger.info(f"✅ Successfully enriched {enriched_count} queries")
-
-        # Print summary
         self._print_summary(enriched_count, len(queries))
-
         return enriched_count
 
     def _print_summary(self, enriched_count: int, total_count: int):
@@ -284,7 +362,7 @@ class ResultsEnricher:
         if enriched_count < total_count:
             logger.warning("\nNOTE: Some queries were not enriched.")
             logger.warning("This may be due to:")
-            logger.warning("  - ACCOUNT_USAGE not yet populated (wait 45+ minutes)")
+            logger.warning("  - ACCOUNT_USAGE not yet populated (wait 90+ minutes)")
             logger.warning("  - Query IDs not found in ACCOUNT_USAGE")
 
         logger.info("=" * 70)

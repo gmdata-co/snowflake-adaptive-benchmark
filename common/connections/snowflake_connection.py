@@ -53,31 +53,42 @@ class SnowflakeConnection(BaseConnection):
 
     def _load_connection_config(self, connection_name: str) -> dict:
         """
-        Load connection configuration from ~/.snowflake/connections.toml
+        Load connection configuration from the standard Snowflake locations.
 
-        Args:
-            connection_name: Name of the connection to load
+        Supports two formats so the framework works with both the legacy
+        Snowflake connector layout and the current Snowflake CLI v2 layout:
 
-        Returns:
-            Dictionary containing connection configuration
-
-        Raises:
-            FileNotFoundError: If connections.toml doesn't exist
-            ValueError: If connection_name not found in file
+          1. ~/.snowflake/connections.toml   — flat `[<connection_name>]` sections.
+          2. ~/.snowflake/config.toml        — CLI v2 `[connections.<name>]` sections
+                                               (this is what `snow connection add` writes).
         """
-        connections_file = Path.home() / ".snowflake" / "connections.toml"
-        if not connections_file.exists():
+        snowflake_dir = Path.home() / ".snowflake"
+        connections_file = snowflake_dir / "connections.toml"
+        config_file = snowflake_dir / "config.toml"
+
+        if connections_file.exists():
+            config = toml.load(connections_file)
+            if connection_name in config:
+                return config[connection_name]
+
+        if config_file.exists():
+            config = toml.load(config_file)
+            nested = config.get("connections", {})
+            if connection_name in nested:
+                return nested[connection_name]
+
+        if not connections_file.exists() and not config_file.exists():
             raise FileNotFoundError(
-                f"Snowflake connections file not found: {connections_file}"
+                f"Snowflake config not found. Expected one of:\n"
+                f"  {connections_file}\n"
+                f"  {config_file}\n"
+                f"Run `snow connection add` or create connections.toml manually."
             )
 
-        config = toml.load(connections_file)
-        if connection_name not in config:
-            raise ValueError(
-                f"Connection '{connection_name}' not found in {connections_file}"
-            )
-
-        return config[connection_name]
+        searched = [str(connections_file), str(config_file)]
+        raise ValueError(
+            f"Connection '{connection_name}' not found in any of: {searched}"
+        )
 
     def _load_private_key(self, private_key_path: str) -> bytes:
         """

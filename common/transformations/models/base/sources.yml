@@ -11,7 +11,13 @@ sources:
           - name: run_id
             description: "Unique identifier for the benchmark run"
           - name: scenario
-            description: "Benchmark scenario (normal, coldstart, concurrent)"
+            description: "Benchmark scenario (sequential, concurrent, dml)"
+          - name: warehouse_type
+            description: "Warehouse generation: 'gen1' or 'adaptive'"
+          - name: qtm
+            description: "QUERY_THROUGHPUT_MULTIPLIER (adaptive only; NULL for gen1)"
+          - name: idle_policy
+            description: "Run-time idle policy: wait_for_suspend | immediate_drop | n_a (adaptive). Drives the dashboard tail/no-tail toggle."
           - name: query_num
             description: "TPC-H query number (1-22)"
           - name: execution_time_sec
@@ -72,8 +78,12 @@ sources:
             description: "Platform (snowflake or databricks)"
           - name: scenario
             description: "Benchmark scenario"
+          - name: warehouse_type
+            description: "Warehouse generation: 'gen1' or 'adaptive'"
           - name: warehouse_size
-            description: "Warehouse size (e.g., SMALL, MEDIUM, XLARGE for Snowflake; XSMALL, SMALL, LARGE for Databricks)"
+            description: "Warehouse size (SMALL, MEDIUM, LARGE, XLARGE)"
+          - name: qtm
+            description: "QUERY_THROUGHPUT_MULTIPLIER (adaptive only; NULL for gen1)"
           - name: warehouse_name
             description: "Full warehouse name/ID"
           - name: start_timestamp

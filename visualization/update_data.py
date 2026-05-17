@@ -1,8 +1,20 @@
 """
-Update visualization JSON data from DuckDB run_summary view.
+Update visualization JSON data from DuckDB.
 
-This script queries the run_summary dbt view and exports the data
-to benchmarkData.json for the React visualization app.
+Queries the adaptive_vs_gen1_summary dbt view and writes benchmarkData.json
+in a shape the React chart consumes. The legacy schema used `snowflake` and
+`databricks` keys per comparison row; this script reuses that shape but maps:
+
+    gen1 warehouse runs    -> "snowflake" key
+    adaptive warehouse runs -> "databricks" key
+
+so the existing ScenarioSummaryChart renders 8 points per scenario (4 sizes ×
+2 warehouse types) with no JSX changes required. Labels and tooltips reflect
+the actual warehouse_type / QTM rather than vendor names — chart logos can be
+updated separately when convenient.
+
+Each (scenario, qtm) combination becomes its own scenario panel so adaptive
+concurrent at QTM=2 vs QTM=8 appear as two distinct panels.
 
 Usage:
     uv run visualization/update_data.py
@@ -22,309 +34,283 @@ import duckdb  # noqa: E402
 
 logger = get_logger(__name__)
 
-# Scenario display names mapping
-SCENARIO_LABELS = {
-    "normal": "22 Sequential Queries",
-    "coldstart": "5 Cold Start Queries",
-    "concurrent": "22 Concurrent Queries",
-    "ctas": "5 CTAS Queries",
-    "dml": "DML Refresh",
-}
-
-# Paths
 DB_PATH = project_root / "benchmark_results.duckdb"
 OUTPUT_PATH = Path(__file__).parent / "src" / "data" / "benchmarkData.json"
 
-
-def get_scenario_costs(conn: duckdb.DuckDBPyConnection) -> dict:
-    """Get total credits/dbus per scenario/tier for proportional cost allocation."""
-    query = """
-    SELECT
-        scenario,
-        warehouse_tier,
-        snow_total_credits,
-        dbx_total_dbus
-    FROM main.run_summary_agg
-    """
-    results = conn.execute(query).fetchall()
-
-    costs = {}
-    for row in results:
-        scenario, tier, snow_credits, dbx_dbus = row
-        key = f"{scenario}-{tier}"
-        costs[key] = {
-            "snow_credits": float(snow_credits) if snow_credits else 0,
-            "dbx_dbus": float(dbx_dbus) if dbx_dbus else 0,
-        }
-    logger.info(f"Loaded scenario costs for {len(costs)} scenario/tier combinations")
-    return costs
+# Pretty labels per scenario id (without QTM suffix).
+SCENARIO_BASE_LABELS = {
+    "sequential": "22 Sequential Queries",
+    "concurrent": "22 Concurrent Queries",
+    "dml": "DML Refresh",
+    "single_query": "Single Query (q1) Latency",
+}
 
 
-def get_query_details_data(
-    conn: duckdb.DuckDBPyConnection, scenario_costs: dict
-) -> list[dict]:
-    """Query query_details view and return formatted data for visualization."""
+# --- Idle-policy series -----------------------------------------------------
+# idle_policy is now a REAL run-time column on every result row (no more
+# guessing by run_id, no run_policy.json manifest). For gen1 it is one of:
+#
+#   wait_for_suspend : gen1 left running until AUTO_SUSPEND fired, THEN dropped
+#                       -> the idle tail is billed (realistic steady-state cost)
+#   immediate_drop   : gen1 killed the instant the workload finished
+#                       -> no idle tail billed ("kill right away")
+#
+# Adaptive has no idle concept (per-query billed) and is recorded as 'n_a';
+# it is policy-invariant, so the SAME adaptive points appear under BOTH toggle
+# states. The dashboard toggle simply filters gen1 rows by this column.
+POLICY_WAIT = "wait_for_suspend"
+POLICY_IMMEDIATE = "immediate_drop"
+DEFAULT_POLICY = POLICY_WAIT  # the "realistic steady state" view
+
+# Display metadata for the App.jsx toggle/banner (was run_policy.json).
+POLICY_META = {
+    POLICY_WAIT: {
+        "tag": "WAIT-FOR-SUSPEND",
+        "short": "With idle tail",
+        "label": "Idle billed: gen1 left to auto-suspend before drop (realistic steady state)",
+    },
+    POLICY_IMMEDIATE: {
+        "tag": "KILL-IMMEDIATELY",
+        "short": "No idle tail",
+        "label": "No idle: gen1 killed the instant the workload finished",
+    },
+}
+
+
+def _scenario_panel_id(scenario: str, qtm) -> str:
+    """Build a synthetic panel id. Adaptive QTM variants get separate panels."""
+    if qtm is None:
+        return scenario
+    return f"{scenario}_qtm{qtm}"
+
+
+def _scenario_label(scenario: str, qtm) -> str:
+    base = SCENARIO_BASE_LABELS.get(scenario, scenario.title())
+    if qtm is None:
+        return base
+    return f"{base} (QTM={qtm})"
+
+
+def get_summary_rows(conn: duckdb.DuckDBPyConnection):
+    """Read every (run_id, scenario, warehouse_type, size, qtm) row."""
     query = """
     SELECT
         run_id,
         scenario,
+        warehouse_type,
+        warehouse_size,
+        qtm,
+        idle_policy,
         warehouse_tier,
-        query_num,
-        ctas_variant,
-        query_id_display,
-        query_type,
-        query_category,
-        query_description,
-        sql_snippet,
-        full_sql,
-        snow_warehouse_size,
-        snow_warehouse_name,
-        snow_execution_sec,
-        snow_rows_produced,
-        snow_error,
-        dbx_warehouse_size,
-        dbx_warehouse_name,
-        dbx_execution_sec,
-        dbx_rows_produced,
-        dbx_error,
-        snow_total_exec_time,
-        dbx_total_exec_time
-    FROM main.query_details
-    ORDER BY
-        CASE scenario
-            WHEN 'normal' THEN 1
-            WHEN 'coldstart' THEN 2
-            WHEN 'concurrent' THEN 3
-            WHEN 'ctas' THEN 4
-            ELSE 5
-        END,
-        warehouse_tier,
-        query_num,
-        ctas_variant
+        total_wall_clock_seconds,
+        total_credits,
+        total_cost_usd,
+        query_count
+    FROM main.adaptive_vs_gen1_summary
+    ORDER BY scenario, warehouse_tier, warehouse_type, qtm,
+             CAST(run_id AS BIGINT)
     """
+    rows = conn.execute(query).fetchall()
+    logger.info(f"Fetched {len(rows)} rows from adaptive_vs_gen1_summary")
+    return rows
 
-    results = conn.execute(query).fetchall()
-    logger.info(f"Fetched {len(results)} rows from query_details")
 
-    details = []
-    for row in results:
-        (
-            run_id,
-            scenario,
-            warehouse_tier,
-            query_num,
-            ctas_variant,
-            query_id_display,
-            query_type,
-            query_category,
-            query_description,
-            sql_snippet,
-            full_sql,
-            snow_warehouse_size,
-            snow_warehouse_name,
-            snow_execution_sec,
-            snow_rows_produced,
-            snow_error,
-            dbx_warehouse_size,
-            dbx_warehouse_name,
-            dbx_execution_sec,
-            dbx_rows_produced,
-            dbx_error,
-            snow_total_exec_time,
-            dbx_total_exec_time,
-        ) = row
+def build_comparisons(rows, policy=None):
+    """
+    Pivot rows so each (scenario, qtm, warehouse_tier) becomes one comparison
+    with both 'snowflake' (= gen1) and 'databricks' (= adaptive) sub-records.
 
-        # Calculate proportional credits/dbus based on execution time share
-        cost_key = f"{scenario}-{warehouse_tier}"
-        costs = scenario_costs.get(cost_key, {})
+    Idle-policy selection is PER CELL (per scenario/type/qtm/tier) and reads
+    the real `idle_policy` column. A row matches the requested `policy` when
+    its idle_policy equals it, OR the warehouse is adaptive (adaptive has no
+    idle concept, so the same adaptive points show under BOTH toggle states).
+    Within a matching policy the highest run_id wins. The per-cell `any`
+    fallback is kept only as a safety net for a genuinely missing cell
+    (flagged `fallback=True`); with a full matrix per policy it stays unused.
 
-        # Snowflake proportional credits
-        snow_credits = None
-        if (
-            snow_execution_sec is not None
-            and snow_total_exec_time is not None
-            and snow_total_exec_time > 0
-        ):
-            proportion = float(snow_execution_sec) / float(snow_total_exec_time)
-            total_credits = costs.get("snow_credits", 0)
-            if total_credits > 0:
-                snow_credits = round(proportion * total_credits, 6)
-
-        # Databricks proportional dbus
-        dbx_dbus = None
-        if (
-            dbx_execution_sec is not None
-            and dbx_total_exec_time is not None
-            and dbx_total_exec_time > 0
-        ):
-            proportion = float(dbx_execution_sec) / float(dbx_total_exec_time)
-            total_dbus = costs.get("dbx_dbus", 0)
-            if total_dbus > 0:
-                dbx_dbus = round(proportion * total_dbus, 6)
-
-        detail = {
-            "id": f"{scenario}-{warehouse_tier}-{run_id}-{query_id_display}",
-            "runId": run_id,
-            "scenario": scenario,
-            "warehouseTier": warehouse_tier,
-            "queryNum": query_num,
-            "ctasVariant": ctas_variant,
-            "queryIdDisplay": query_id_display,
-            "queryType": query_type,
-            "queryCategory": query_category,
-            "queryDescription": query_description,
-            "sqlSnippet": sql_snippet,
-            "fullSql": full_sql,
-            "snowflake": {
-                "warehouseSize": snow_warehouse_size,
-                "warehouseName": snow_warehouse_name,
-                "executionSec": (
-                    round(float(snow_execution_sec), 2)
-                    if snow_execution_sec is not None
-                    else None
-                ),
-                "credits": snow_credits,
-                "rowsProduced": snow_rows_produced,
-                "error": snow_error if snow_error else None,
-            }
-            if snow_warehouse_size
-            else None,
-            "databricks": {
-                "warehouseSize": dbx_warehouse_size,
-                "warehouseName": dbx_warehouse_name,
-                "executionSec": (
-                    round(float(dbx_execution_sec), 2)
-                    if dbx_execution_sec is not None
-                    else None
-                ),
-                "dbus": dbx_dbus,
-                "rowsProduced": dbx_rows_produced,
-                "error": dbx_error if dbx_error else None,
-            }
-            if dbx_warehouse_size
-            else None,
+    Gen1 has qtm=NULL and lives on every adaptive QTM panel? No — gen1 belongs
+    on its own panel because qtm doesn't apply. To keep the chart at 8 points
+    per panel (4 sizes × 2 types), we attach the SAME gen1 result to every
+    adaptive-QTM panel that exists for that scenario.
+    """
+    # cells[scenario][wtype][bucket][tier] = {"target": rec|None, "any": rec}
+    # rows arrive ORDER BY ... run_id ASC, so "last seen" == highest run_id.
+    cells = {}
+    for r in rows:
+        (run_id, scenario, wtype, size, qtm, idle_policy, tier,
+         time_s, credits, cost, qcount) = r
+        # The single-query (q1) latency experiment was run as
+        # `--scenarios sequential --queries 1`, so it lands as scenario
+        # 'sequential' too. Split it into its own panel so it doesn't collide
+        # with the full 22-query sequential runs.
+        if scenario == "sequential" and qcount == 1:
+            scenario = "single_query"
+        bucket_key = qtm if wtype == "adaptive" else None
+        rec = {
+            "run_id": run_id,
+            "size": size,
+            "qtm": qtm,
+            "time": float(time_s) if time_s is not None else None,
+            "credits": float(credits) if credits is not None else None,
+            "cost": float(cost) if cost is not None else None,
         }
-        details.append(detail)
+        slot = (
+            cells.setdefault(scenario, {})
+            .setdefault(wtype, {})
+            .setdefault(bucket_key, {})
+            .setdefault(tier, {"target": None, "any": None})
+        )
+        slot["any"] = rec
+        # Adaptive is policy-invariant -> always matches. Gen1 matches only
+        # the series whose idle_policy it was actually run under.
+        matches = (
+            policy is None
+            or wtype == "adaptive"
+            or idle_policy == policy
+        )
+        if matches:
+            slot["target"] = rec
 
-    return details
-
-
-def get_run_summary_data(conn: duckdb.DuckDBPyConnection) -> list[dict]:
-    """Query run_summary_agg view and return formatted comparison data."""
-    query = """
-    SELECT
-        scenario,
-        warehouse_tier,
-        snow_warehouse_size,
-        dbx_warehouse_size,
-        snow_wall_clock_seconds,
-        dbx_wall_clock_seconds,
-        snow_total_credits,
-        dbx_total_dbus,
-        snow_total_cost,
-        dbx_total_cost
-    FROM main.run_summary_agg
-    ORDER BY
-        CASE scenario
-            WHEN 'normal' THEN 1
-            WHEN 'coldstart' THEN 2
-            WHEN 'concurrent' THEN 3
-            WHEN 'ctas' THEN 4
-            ELSE 5
-        END,
-        warehouse_tier
-    """
-
-    results = conn.execute(query).fetchall()
-    logger.info(f"Fetched {len(results)} rows from run_summary_agg")
+    # Resolve each cell: prefer the target-policy record, else fall back to
+    # the full-prior-run record (flagged).
+    by_scenario = {}
+    for scenario, by_type in cells.items():
+        for wtype, by_bucket in by_type.items():
+            for bucket, by_tier in by_bucket.items():
+                for tier, slot in by_tier.items():
+                    chosen = slot["target"]
+                    fallback = False
+                    if chosen is None:
+                        chosen = slot["any"]
+                        fallback = True
+                    if chosen is None:
+                        continue
+                    chosen = {**chosen, "fallback": fallback}
+                    (
+                        by_scenario.setdefault(scenario, {})
+                        .setdefault(wtype, {})
+                        .setdefault(bucket, {})
+                    )[tier] = chosen
 
     comparisons = []
-    for row in results:
-        (
-            scenario,
-            tier,
-            snow_size,
-            dbx_size,
-            snow_time,
-            dbx_time,
-            snow_credits,
-            dbx_dbus,
-            snow_cost,
-            dbx_cost,
-        ) = row
+    for scenario, by_type in by_scenario.items():
+        gen1_buckets = by_type.get("gen1", {})
+        adaptive_buckets = by_type.get("adaptive", {})
 
-        # Build platform data - set to None if warehouse_size is missing (no data for that platform)
-        # Use `is not None` checks since 0 is a valid value but falsy in Python
-        snowflake_data = None
-        if snow_size:
-            snowflake_data = {
-                "size": snow_size,
-                "label": f"Snowflake {snow_size.title()}",
-                "time": round(float(snow_time), 2) if snow_time is not None else None,
-                "credits": round(float(snow_credits), 4) if snow_credits is not None else None,
-                "cost": round(float(snow_cost), 2) if snow_cost is not None else None,
-            }
-
-        databricks_data = None
-        if dbx_size:
-            databricks_data = {
-                "size": dbx_size,
-                "label": f"Databricks {dbx_size.title()}",
-                "time": round(float(dbx_time), 2) if dbx_time is not None else None,
-                "dbus": round(float(dbx_dbus), 4) if dbx_dbus is not None else None,
-                "cost": round(float(dbx_cost), 2) if dbx_cost is not None else None,
-            }
-
-        comparison = {
-            "id": f"{scenario}-{tier}",
-            "scenario": scenario,
-            "scenarioLabel": SCENARIO_LABELS.get(scenario, scenario.title()),
-            "warehouseTier": tier,
-            "snowflake": snowflake_data,
-            "databricks": databricks_data,
-        }
-        comparisons.append(comparison)
+        gen1_data = gen1_buckets.get(None, {})  # qtm=None bucket
+        if adaptive_buckets:
+            # One panel per adaptive QTM value.
+            for qtm, adapt_data in adaptive_buckets.items():
+                panel_id = _scenario_panel_id(scenario, qtm)
+                comparisons.extend(
+                    _emit_panel_rows(panel_id, scenario, qtm, gen1_data, adapt_data)
+                )
+        else:
+            # Gen1 only: still emit one panel with the gen1 points.
+            comparisons.extend(
+                _emit_panel_rows(scenario, scenario, None, gen1_data, {})
+            )
 
     return comparisons
 
 
-def update_visualization_data():
-    """Main function to update the visualization JSON data."""
-    logger.info(f"Connecting to DuckDB at {DB_PATH}")
+def _emit_panel_rows(panel_id, scenario, qtm, gen1_by_tier, adaptive_by_tier):
+    """Emit one comparison row per warehouse_tier for a given panel."""
+    label = _scenario_label(scenario, qtm)
+    tiers = sorted(set(gen1_by_tier) | set(adaptive_by_tier))
+    rows = []
+    for tier in tiers:
+        g = gen1_by_tier.get(tier)
+        a = adaptive_by_tier.get(tier)
 
+        # The chart's existing JSX uses `snowflake` and `databricks` keys.
+        # We reuse those keys: snowflake = gen1, databricks = adaptive.
+        snowflake_data = None
+        if g:
+            snowflake_data = {
+                "size": g["size"],
+                "label": f"Gen1 {g['size']}",
+                "time": round(g["time"], 2) if g["time"] is not None else None,
+                "credits": round(g["credits"], 4) if g["credits"] is not None else None,
+                "cost": round(g["cost"], 2) if g["cost"] is not None else None,
+                "fallback": bool(g.get("fallback")),
+            }
+
+        databricks_data = None
+        if a:
+            qtm_suffix = f" QTM={a['qtm']}" if a["qtm"] is not None else ""
+            databricks_data = {
+                "size": a["size"],
+                "label": f"Adaptive {a['size']}{qtm_suffix}",
+                "time": round(a["time"], 2) if a["time"] is not None else None,
+                "dbus": round(a["credits"], 4) if a["credits"] is not None else None,
+                "cost": round(a["cost"], 2) if a["cost"] is not None else None,
+                "fallback": bool(a.get("fallback")),
+            }
+
+        # Row is flagged fallback only if a PRESENT sub-record is fallback.
+        row_fallback = bool(
+            (snowflake_data and snowflake_data["fallback"])
+            or (databricks_data and databricks_data["fallback"])
+        )
+        rows.append({
+            "id": f"{panel_id}-{tier}",
+            "scenario": panel_id,
+            "scenarioLabel": label,
+            "warehouseTier": tier,
+            "snowflake": snowflake_data,
+            "databricks": databricks_data,
+            "policyFallback": row_fallback,
+        })
+    return rows
+
+
+def update_visualization_data():
+    logger.info(f"Connecting to DuckDB at {DB_PATH}")
     if not DB_PATH.exists():
         logger.error(f"Database not found: {DB_PATH}")
         sys.exit(1)
 
     conn = duckdb.connect(str(DB_PATH), read_only=True)
-
     try:
-        # Load scenario costs for proportional allocation
-        scenario_costs = get_scenario_costs(conn)
+        rows = get_summary_rows(conn)
 
-        comparisons = get_run_summary_data(conn)
-        query_details = get_query_details_data(conn, scenario_costs)
-
-        if not comparisons:
-            logger.warning("No data found in run_summary view")
+        # Build a full comparison set per idle policy. Fallback is per-cell
+        # (handled inside build_comparisons): each policy is the COMPLETE
+        # matrix — real results where that policy was actually run, the full
+        # prior run elsewhere (flagged), with XS tacked on as its runs land.
+        policies_out = {
+            POLICY_WAIT: {"comparisons": build_comparisons(rows, policy=POLICY_WAIT)},
+            POLICY_IMMEDIATE: {"comparisons": build_comparisons(rows, policy=POLICY_IMMEDIATE)},
+        }
+        if (not policies_out[POLICY_WAIT]["comparisons"]
+                and not policies_out[POLICY_IMMEDIATE]["comparisons"]):
+            logger.warning("No data found in adaptive_vs_gen1_summary view")
             sys.exit(1)
 
+        default_comps = policies_out[DEFAULT_POLICY]["comparisons"]
         output = {
-            "comparisons": comparisons,
-            "queryDetails": query_details,
+            "defaultPolicy": DEFAULT_POLICY,
+            "policyMeta": POLICY_META,
+            "policies": policies_out,
+            # Back-compat: anything still reading `.comparisons` gets the
+            # default policy's set.
+            "comparisons": default_comps,
+            "queryDetails": [],  # query_details view is disabled in this experiment
             "exportedAt": datetime.now().isoformat(),
         }
-
-        # Ensure output directory exists
         OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-
         with open(OUTPUT_PATH, "w") as f:
             json.dump(output, f, indent=2)
 
-        logger.info(
-            f"Exported {len(comparisons)} comparisons and {len(query_details)} query details to {OUTPUT_PATH}"
-        )
-
+        for pol in (POLICY_WAIT, POLICY_IMMEDIATE):
+            comps = policies_out[pol]["comparisons"]
+            fb = sum(1 for c in comps if c.get("policyFallback"))
+            scen = sorted({c["scenario"] for c in comps})
+            logger.info(
+                f"[{pol}] {len(comps)} comparisons, {len(scen)} panels "
+                f"({fb} fallback rows): {scen}"
+            )
     finally:
         conn.close()
 
