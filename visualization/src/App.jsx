@@ -105,7 +105,7 @@ function VerdictTile({ kind, v }) {
   );
 }
 
-function ChartBlock({ rows, caption }) {
+function ChartBlock({ rows, domainRows, caption }) {
   const [hoveredTier, setHoveredTier] = useState(null);
   const verdict = useMemo(() => computeVerdict(rows), [rows]);
   const fallback = useMemo(
@@ -142,6 +142,7 @@ function ChartBlock({ rows, caption }) {
       >
         <ScenarioSummaryChart
           scenarioData={rows}
+          domainData={domainRows}
           hoveredTier={hoveredTier}
           onHoverTier={setHoveredTier}
         />
@@ -423,6 +424,20 @@ function App() {
   );
   const get = (id) => priced(grouped[id] || [], price);
 
+  // Axis domains are computed from BOTH policies' points (union), so toggling
+  // wait <-> immediate never rebuilds the axes — only the plotted dots move.
+  // Still reprices with the $/credit lever (intended).
+  const groupedAll = useMemo(
+    () =>
+      groupByScenario([
+        ...(policies.wait_for_suspend?.comparisons || []),
+        ...(policies.immediate_drop?.comparisons || []),
+        ...(benchmarkData.comparisons || []),
+      ]),
+    [policies]
+  );
+  const getDomain = (id) => priced(groupedAll[id] || [], price);
+
   return (
     <PolicyContext.Provider value={{ policy, setPolicy, policyMeta }}>
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "white" }}>
@@ -534,6 +549,7 @@ function App() {
           </P>
           <ChartBlock
             rows={get("single_query_qtm2")}
+            domainRows={getDomain("single_query_qtm2")}
             caption="TPC-H query 1, run once per warehouse. Adaptive at QTM=2."
           />
           <Takeaway>
@@ -572,6 +588,7 @@ function App() {
           </P>
           <ChartBlock
             rows={get("sequential_qtm2")}
+            domainRows={getDomain("sequential_qtm2")}
             caption="22 TPC-H queries, sequential. Adaptive at QTM=2."
           />
           <Takeaway>
@@ -613,10 +630,12 @@ function App() {
           </P>
           <ChartBlock
             rows={get("concurrent_qtm2")}
+            domainRows={getDomain("concurrent_qtm2")}
             caption="22 concurrent queries · Adaptive QTM=2 vs Gen1 multi-cluster (max 4)."
           />
           <ChartBlock
             rows={get("concurrent_qtm8")}
+            domainRows={getDomain("concurrent_qtm8")}
             caption="Same workload · Adaptive QTM=8: more burst, faster, but cost climbs at the big sizes."
           />
           <Takeaway>
@@ -650,6 +669,7 @@ function App() {
           </P>
           <ChartBlock
             rows={get("dml_qtm2")}
+            domainRows={getDomain("dml_qtm2")}
             caption="Delete + insert refresh on lineitem. Adaptive at QTM=2."
           />
           <Takeaway>

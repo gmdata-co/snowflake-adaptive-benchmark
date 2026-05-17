@@ -52,7 +52,7 @@ class BaseConnection(ABC):
     @property
     @abstractmethod
     def platform_name(self) -> str:
-        """Return the platform name (e.g., 'snowflake', 'databricks')."""
+        """Return the platform name (e.g., 'snowflake')."""
         pass
 
     def is_connected(self) -> bool:

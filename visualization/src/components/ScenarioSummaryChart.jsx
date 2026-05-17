@@ -200,19 +200,42 @@ function ComparisonTooltip({ active, payload, timeUnit, scenarioData }) {
   return null;
 }
 
-export function ScenarioSummaryChart({ scenarioData, hoveredTier, onHoverTier }) {
-  // Compute time unit and domains from all data points
+export function ScenarioSummaryChart({
+  scenarioData,
+  domainData,
+  hoveredTier,
+  onHoverTier,
+}) {
+  // Axes/time-unit are derived from domainData (the union of BOTH idle
+  // policies for this panel) so flipping the toggle never rebuilds the
+  // axes — only the plotted dots move. Falls back to scenarioData when no
+  // domain source is supplied. Points themselves come from scenarioData
+  // (the active policy).
   const { timeUnit, xDomain, yDomain, chartData } = useMemo(() => {
+    const domainSrc =
+      domainData && domainData.length ? domainData : scenarioData;
+
     let maxTime = 0;
     let maxCost = 0;
+    for (const comparison of domainSrc) {
+      if (comparison.snowflake) {
+        maxTime = Math.max(maxTime, comparison.snowflake.time || 0);
+        maxCost = Math.max(maxCost, comparison.snowflake.cost || 0);
+      }
+      if (comparison.databricks) {
+        maxTime = Math.max(maxTime, comparison.databricks.time || 0);
+        maxCost = Math.max(maxCost, comparison.databricks.cost || 0);
+      }
+    }
+
+    const unit = getTimeUnit(maxTime);
+    const xMax = Math.ceil(convertTime(maxTime, unit) * 1.1);
+    const yMax = Math.ceil(maxCost * 1.2 * 10) / 10;
 
     const data = [];
     for (const comparison of scenarioData) {
       // Only include platforms that have data
       if (comparison.snowflake) {
-        maxTime = Math.max(maxTime, comparison.snowflake.time || 0);
-        maxCost = Math.max(maxCost, comparison.snowflake.cost || 0);
-
         data.push({
           platform: "snowflake",
           tier: comparison.warehouseTier,
@@ -222,11 +245,7 @@ export function ScenarioSummaryChart({ scenarioData, hoveredTier, onHoverTier })
           cost: comparison.snowflake.cost,
         });
       }
-
       if (comparison.databricks) {
-        maxTime = Math.max(maxTime, comparison.databricks.time || 0);
-        maxCost = Math.max(maxCost, comparison.databricks.cost || 0);
-
         data.push({
           platform: "databricks",
           tier: comparison.warehouseTier,
@@ -238,12 +257,6 @@ export function ScenarioSummaryChart({ scenarioData, hoveredTier, onHoverTier })
       }
     }
 
-    const unit = getTimeUnit(maxTime);
-    const maxTimeInUnit = convertTime(maxTime, unit);
-    const xMax = Math.ceil(maxTimeInUnit * 1.1);
-    const yMax = Math.ceil(maxCost * 1.2 * 10) / 10;
-
-    // Add displayTime for chart positioning
     const chartDataWithDisplay = data.map(d => ({
       ...d,
       displayTime: convertTime(d.time, unit),
@@ -255,7 +268,7 @@ export function ScenarioSummaryChart({ scenarioData, hoveredTier, onHoverTier })
       yDomain: [0, yMax],
       chartData: chartDataWithDisplay,
     };
-  }, [scenarioData]);
+  }, [scenarioData, domainData]);
 
   const unitSuffix = getUnitSuffix(timeUnit);
 

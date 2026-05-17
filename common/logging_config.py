@@ -1,9 +1,9 @@
 """
-Global logging configuration for the Snowflake vs Databricks benchmark project.
+Global logging configuration for the Snowflake adaptive-vs-gen1 benchmark project.
 
 Provides:
 - Colored console output (clean, no auto emojis)
-- Separate log files for Snowflake and Databricks
+- Separate log file for Snowflake
 - Centralized logger setup for all modules
 - Developers add emojis directly to log messages for major events
 """
@@ -28,7 +28,7 @@ def setup_logging():
     """
     Configure global logging with:
     - Colored console output (clean, emojis in messages only)
-    - Separate file handlers for Snowflake and Databricks
+    - File handler for Snowflake
     - Common file for shared/common logs
     """
     root_logger = logging.getLogger()
@@ -78,21 +78,6 @@ def setup_logging():
         _ModuleFilter(["snowflake", "common.connections.snowflake_connection"])
     )
     root_logger.addHandler(snowflake_file_handler)
-
-    # File handler for Databricks logs
-    databricks_file_handler = logging.FileHandler(
-        LOGS_DIR / "databricks.log", mode="a"
-    )
-    databricks_file_handler.setLevel(logging.DEBUG)
-    databricks_file_formatter = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    databricks_file_handler.setFormatter(databricks_file_formatter)
-    databricks_file_handler.addFilter(
-        _ModuleFilter(["databricks", "common.connections.databricks_connection"])
-    )
-    root_logger.addHandler(databricks_file_handler)
 
     # File handler for common logs (everything not in platform-specific handlers)
     common_file_handler = logging.FileHandler(LOGS_DIR / "common.log", mode="a")
