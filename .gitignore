@@ -10,3 +10,11 @@ snowflake/export/gcs-service-account-key.json
 *.duckdb.wal
 .env copy
 common/transformations/target/
+
+# Runtime artifacts and benchmark data
+*.log
+*.DONE
+.tracks/
+*.duckdb.bak-*
+*.duckdb.archived-*
+*.NOTE.txt
