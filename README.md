@@ -36,7 +36,7 @@ to the React app in `visualization/`.
 ```bash
 uv sync                       # install deps
 uv run setup_config.py        # generate .env (Snowflake connection)
-./run_3track.sh               # run the full benchmark (long-running; use nohup)
+./scripts/run_3track.sh       # run the full benchmark (long-running; use nohup)
 cd visualization && npm install && npm run dev   # view the article
 ```
 
@@ -47,7 +47,9 @@ cd visualization && npm install && npm run dev   # view the article
 | `snowflake/` | benchmark execution (warehouses, queries, enrichment) |
 | `common/` | DuckDB storage + dbt transformations |
 | `visualization/` | the React article |
-| `run_3track.sh`, `merge_tracks.py` | 3-track orchestration |
+| `scripts/` | benchmark runner shell scripts (`run_3track.sh`, concurrent toolkit) |
+| `merge_tracks.py` | 3-track DuckDB merge |
+| `archive/` | superseded one-off scripts (kept for history) |
 
 ## Credits
 

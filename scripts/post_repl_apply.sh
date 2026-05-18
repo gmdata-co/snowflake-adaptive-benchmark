@@ -14,7 +14,7 @@
 # in-flight reps keep an identical, consistent cache-disable mechanism (never
 # mixed mid-run, never a window where caching is silently re-enabled).
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 LOG="$ROOT/post_repl_apply.log"
 : > "$LOG"

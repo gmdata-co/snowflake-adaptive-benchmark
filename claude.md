@@ -22,7 +22,7 @@
   - `warehouse_manager.py` - Warehouse lifecycle (create, destroy, suspend/resume)
   - `query_executor.py` - Query execution and metrics collection
   - `benchmark.py` - Orchestration using the managers
-- **3-track concurrency**: `run_3track.sh` runs three isolated tracks
+- **3-track concurrency**: `scripts/run_3track.sh` runs three isolated tracks
   (adaptive / gen1-tail / gen1-notail) on uniquely-named warehouses, each
   writing its own DuckDB; `merge_tracks.py` merges them into the canonical
   `benchmark_results.duckdb`.

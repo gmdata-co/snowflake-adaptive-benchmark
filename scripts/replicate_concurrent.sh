@@ -23,7 +23,7 @@
 #    then aggregate (median/min/max/stdev per cell across reps).
 # Stops there; Claude reads the aggregate and we rewrite Chapter 3 to reality.
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 N=5
 SIZES="xsmall,small,medium,large,xlarge"

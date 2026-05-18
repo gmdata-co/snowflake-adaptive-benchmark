@@ -25,7 +25,7 @@
 # PURPOSE; Claude rebuilds the viz and the user reviews/deploys. Survives
 # session/SSH death (launch via nohup).
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 SIZES="xsmall,small,medium,large,xlarge"
 TRACK_DIR="$ROOT/.tracks"

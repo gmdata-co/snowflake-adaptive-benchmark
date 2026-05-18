@@ -13,7 +13,7 @@
 # choice (noise accepted). Then settle + enrich + sentinel; the viz override
 # reads this DB per idle_policy.
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 SIZES="xsmall,small,medium,large,xlarge"
 DB="$ROOT/.ccfresh/benchmark_results.duckdb"
