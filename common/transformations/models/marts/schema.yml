@@ -1,91 +1,35 @@
 version: 2
 
 models:
-  - name: platform_comparison_latest
+  - name: adaptive_vs_gen1_summary
     description: >
-      Platform comparison for the latest run_id, including all scenarios.
-      This view shows query-by-query performance comparison between Snowflake
-      and Databricks for the most recent benchmark run, with scenario breakdown.
+      Per-scenario summary comparing Snowflake adaptive warehouses against
+      gen1 warehouses. One row per (scenario, warehouse_type, size, qtm,
+      idle_policy) combination. Feeds the visualization app.
     columns:
+      - name: run_id
+        description: "Unique identifier for the benchmark run"
+        data_tests:
+          - not_null
+
       - name: scenario
-        description: "Benchmark scenario (normal, coldstart, concurrent)"
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['normal', 'coldstart', 'cold_start', 'primary', 'concurrent', 'ctas', 'TOTAL','dml']
-
-      - name: query_num
-        description: "TPC-H query number (1-22, or 999999 for total row)"
+        description: "Benchmark scenario"
         data_tests:
           - not_null
 
-      - name: snowflake_seconds
-        description: "Snowflake query execution time in seconds"
-
-      - name: dbx_seconds
-        description: "Databricks query execution time in seconds"
-
-      - name: snowflake_cost
-        description: "Proportionally allocated cost for Snowflake query"
-
-      - name: dbx_cost
-        description: "Proportionally allocated cost for Databricks query"
-
-      - name: row_count
-        description: "Number of rows produced by the query"
-
-      - name: status
-        description: "Query execution status (success, error, etc.)"
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: ['success', 'snowflake_error', 'databricks_error', 'both_error', 'unknown', 'TOTAL']
-
-  - name: platform_comparison_normal
-    description: >
-      Platform comparison for the latest NORMAL scenario run.
-      Normal scenario runs queries sequentially with the warehouse staying warm,
-      benefiting from caching and warm compute.
-    columns:
-      - name: query_num
-        description: "TPC-H query number (1-22, or 999999 for total row)"
+      - name: warehouse_type
+        description: "Warehouse generation: 'gen1' or 'adaptive'"
         data_tests:
           - not_null
 
-      - name: snowflake_seconds
-        description: "Snowflake query execution time in seconds"
+      - name: idle_policy
+        description: "Idle policy: wait_for_suspend | immediate_drop | n_a"
 
-      - name: dbx_seconds
-        description: "Databricks query execution time in seconds"
+      - name: total_wall_clock_seconds
+        description: "Total wall clock time for the scenario"
 
-      - name: status
-        description: "Query execution status"
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: ['success', 'snowflake_error', 'databricks_error', 'both_error', 'unknown', 'TOTAL']
+      - name: total_cost_usd
+        description: "Total cost in USD for the scenario"
 
-  - name: platform_comparison_coldstart
-    description: >
-      Platform comparison for the latest COLDSTART scenario run.
-      Coldstart scenario suspends/stops the warehouse between each query,
-      measuring true cold start performance with no caching benefits.
-    columns:
-      - name: query_num
-        description: "TPC-H query number (1-22, or 999999 for total row)"
-        data_tests:
-          - not_null
-
-      - name: snowflake_seconds
-        description: "Snowflake query execution time in seconds"
-
-      - name: dbx_seconds
-        description: "Databricks query execution time in seconds"
-
-      - name: status
-        description: "Query execution status"
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: ['success', 'snowflake_error', 'databricks_error', 'both_error', 'unknown', 'TOTAL']
+      - name: query_count
+        description: "Number of queries in the scenario"

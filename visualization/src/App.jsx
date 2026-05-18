@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import { ScenarioSummaryChart } from "./components/ScenarioSummaryChart";
-import { SnowflakeLogo, GEN1_COLOR } from "./components/SnowflakeLogo";
-import { DatabricksLogo, ADAPTIVE_COLOR } from "./components/DatabricksLogo";
+import { Gen1Logo, GEN1_COLOR } from "./components/Gen1Logo";
+import { AdaptiveLogo, ADAPTIVE_COLOR } from "./components/AdaptiveLogo";
 import benchmarkData from "./data/benchmarkData.json";
 
 const DEFAULT_CREDIT_PRICE = 2.0;
@@ -29,22 +29,22 @@ function groupByScenario(comparisons) {
 function priced(rows, price) {
   return rows.map((c) => ({
     ...c,
-    snowflake: c.snowflake
+    gen1: c.gen1
       ? {
-          ...c.snowflake,
+          ...c.gen1,
           cost:
-            c.snowflake.credits != null
-              ? +(c.snowflake.credits * price).toFixed(2)
-              : c.snowflake.cost,
+            c.gen1.credits != null
+              ? +(c.gen1.credits * price).toFixed(2)
+              : c.gen1.cost,
         }
       : null,
-    databricks: c.databricks
+    adaptive: c.adaptive
       ? {
-          ...c.databricks,
+          ...c.adaptive,
           cost:
-            c.databricks.dbus != null
-              ? +(c.databricks.dbus * price).toFixed(2)
-              : c.databricks.cost,
+            c.adaptive.dbus != null
+              ? +(c.adaptive.dbus * price).toFixed(2)
+              : c.adaptive.cost,
         }
       : null,
   }));
@@ -54,9 +54,9 @@ function priced(rows, price) {
 function computeVerdict(rows) {
   let gT = 0, gC = 0, aT = 0, aC = 0, n = 0;
   for (const c of rows) {
-    if (!c.snowflake || !c.databricks) continue;
-    gT += c.snowflake.time; gC += c.snowflake.cost;
-    aT += c.databricks.time; aC += c.databricks.cost;
+    if (!c.gen1 || !c.adaptive) continue;
+    gT += c.gen1.time; gC += c.gen1.cost;
+    aT += c.adaptive.time; aC += c.adaptive.cost;
     n += 1;
   }
   if (!n) return null;
@@ -105,7 +105,7 @@ function VerdictTile({ kind, v }) {
   );
 }
 
-function ChartBlock({ rows, caption }) {
+function ChartBlock({ rows, domainRows, caption }) {
   const [hoveredTier, setHoveredTier] = useState(null);
   const verdict = useMemo(() => computeVerdict(rows), [rows]);
   const fallback = useMemo(
@@ -142,6 +142,7 @@ function ChartBlock({ rows, caption }) {
       >
         <ScenarioSummaryChart
           scenarioData={rows}
+          domainData={domainRows}
           hoveredTier={hoveredTier}
           onHoverTier={setHoveredTier}
         />
@@ -278,13 +279,13 @@ function Legend() {
   return (
     <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <SnowflakeLogo size={18} />
+        <Gen1Logo size={18} />
         <span style={{ color: GEN1_COLOR, fontWeight: 600, fontSize: "0.85rem" }}>
           Gen1 warehouse
         </span>
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <DatabricksLogo size={18} />
+        <AdaptiveLogo size={18} />
         <span style={{ color: ADAPTIVE_COLOR, fontWeight: 600, fontSize: "0.85rem" }}>
           Adaptive warehouse
         </span>
@@ -423,6 +424,20 @@ function App() {
   );
   const get = (id) => priced(grouped[id] || [], price);
 
+  // Axis domains are computed from BOTH policies' points (union), so toggling
+  // wait <-> immediate never rebuilds the axes; only the plotted dots move.
+  // Still reprices with the $/credit lever (intended).
+  const groupedAll = useMemo(
+    () =>
+      groupByScenario([
+        ...(policies.wait_for_suspend?.comparisons || []),
+        ...(policies.immediate_drop?.comparisons || []),
+        ...(benchmarkData.comparisons || []),
+      ]),
+    [policies]
+  );
+  const getDomain = (id) => priced(groupedAll[id] || [], price);
+
   return (
     <PolicyContext.Provider value={{ policy, setPolicy, policyMeta }}>
     <div style={{ minHeight: "100vh", background: "#0f172a", color: "white" }}>
@@ -504,11 +519,6 @@ function App() {
             <strong>$/credit</strong> price up top (default $2) recomputes every
             chart live.
           </P>
-          <P>
-            Every chart below is the same shape: <strong>duration on the
-            x-axis, dollars on the y-axis</strong>. Bottom-left is the dream:
-            fast and cheap. Hover any point for the head-to-head.
-          </P>
         </div>
 
         {/* 1. Single query */}
@@ -525,23 +535,32 @@ function App() {
             how little can you pay for an answer you'll get either way?
           </P>
           <P>
-            On Gen1, scaling up barely helps (8.2s shrinks to 2.6s), but cost
-            climbs almost linearly, $0.07 → $0.53, because Gen1 bills the whole
-            warehouse against a 60-second minimum even when the query took
-            three. Adaptive bills the <em>query</em>, so reaching for a bigger
-            size to shave a couple of seconds barely moves the bill ($0.09 →
-            $0.38).
+            On Gen1 the size dial behaves exactly as you would expect. Step up
+            a size and the query time drops by roughly half while the price
+            roughly doubles: Small in 9.5s for $0.07, Medium in 4.3s for $0.14,
+            Large in 3.1s for $0.28. By XLarge it is pure diminishing returns,
+            $0.55 for 3.4s, no faster than Large at double the price.
+          </P>
+          <P>
+            On Adaptive the picture is more interesting. Small, Medium and
+            Large stay relatively close together, then XLarge breaks away as
+            the outlier: it costs roughly 4x Small and Medium ($0.38 vs $0.09)
+            while finishing only about a second faster than Medium (2.7s vs
+            3.8s). You pay a large premium for a speedup you can barely measure.
           </P>
           <ChartBlock
             rows={get("single_query_qtm2")}
+            domainRows={getDomain("single_query_qtm2")}
             caption="TPC-H query 1, run once per warehouse. Adaptive at QTM=2."
           />
           <Takeaway>
-            For a one-off query, Gen1 Small is the cost floor at ~$0.07; don't
-            size up, it only buys seconds you don't need at a price you do pay.
-            If you want the speed of a big warehouse without the size tax,
-            Adaptive delivers XLarge latency for a fraction of Gen1 XLarge's
-            cost.
+            If you let Snowflake reach for the larger resources, it will
+            happily do so, even when a smaller warehouse would have
+            produced a near-identical answer. The size cap does not appear to
+            push your work down onto smaller compute on its own; set it high
+            and you pay high. That caveat aside, Adaptive still wins this
+            single query overall, faster on average and cheaper on average than
+            Gen1.
           </Takeaway>
         </Section>
 
@@ -550,10 +569,10 @@ function App() {
           <SectionHeading
             kicker="Chapter 2 · A continuous workload"
             title="A warehouse kept continuously busy"
-            goal="Simulate a steady, back-to-back workload that keeps a warehouse fully saturated, so you pay only for useful work, never idle."
+            goal="Simulate a steady, back-to-back workload that keeps a warehouse fully saturated."
           />
           <P>
-            Twenty-two queries run in sequence with no gaps, so the warehouse
+            Sixty-six queries run in sequence with no gaps, so the warehouse
             never goes idle. Whether that load is a scheduled job chain, a
             steady stream of requests, or an analyst working all day, the shape
             is the same: continuous work. This is the cleanest test of raw
@@ -561,25 +580,25 @@ function App() {
             nothing to optimize away.
           </P>
           <P>
-            Adaptive is the faster engine at every size, clearing the
-            22-query sequence roughly 13 to 15 percent quicker (533s vs 617s
-            at Small, 200s vs 220s at XLarge). On cost the two trade places by
-            scale: at Small, Gen1 is cheaper ($0.82 vs $1.09); by Medium they
-            are effectively even ($1.02 vs $1.00); and from Large up Adaptive
-            pulls clearly ahead ($1.36 vs $1.73 at Large, $1.72 vs $2.51 at
-            XLarge). The bigger the warehouse, the more Adaptive's per-query
-            billing beats paying for a full fixed size.
+            On raw speed the two are closer than you might expect, and Gen1
+            holds its own. Adaptive is dramatically faster only at the
+            XS size (about 8.5 minutes vs 11.4); at Small, Medium and
+            Large Gen1 actually finishes a touch sooner, and at XLarge they
+            tie at roughly ~3.2 minutes. On cost Gen1 leads across most of the range
+            and in aggregate.
           </P>
           <ChartBlock
             rows={get("sequential_qtm2")}
+            domainRows={getDomain("sequential_qtm2")}
             caption="22 TPC-H queries, sequential. Adaptive at QTM=2."
           />
           <Takeaway>
-            On a continuously busy warehouse, Adaptive is consistently the
-            faster engine, and it is the cheaper one at every size from Medium
-            up. Gen1 holds a cost edge only at the smallest tier; the larger
-            the warehouse, the more decisively Adaptive wins on both speed and
-            price.
+            On a continuously busy warehouse, Gen1 is the workhorse: speed
+            comparable to Adaptive across most sizes, and cheaper from XSmall
+            through Large. Adaptive earns its keep at the extremes, a large
+            speed jump at the smallest size and a real cost saving only at
+            XLarge. For steady, saturated workloads in the middle of the size
+            range, a fixed Gen1 warehouse wins this scenario.
           </Takeaway>
         </Section>
 
@@ -587,43 +606,49 @@ function App() {
         <Section id="concurrent_qtm2">
           <SectionHeading
             kicker="Chapter 3 · Everyone at once"
-            title="Concurrency: Adaptive's home turf"
+            title="Concurrency: Adaptive is faster, cost depends on size"
             goal="Fire 22 queries simultaneously: a BI tool, a dashboard refresh, a whole team hitting it together."
           />
           <P>
             Gen1 absorbs a concurrency spike with multi-cluster scale-out,
-            here capped at four clusters, billed per active cluster. In
-            practice it never hit that cap: Medium, Large and XLarge each
-            cleared the 22-query burst on just <strong>two</strong> clusters,
-            and Small needed <strong>three</strong>. The pattern is telling:
-            the smaller the warehouse, the more clusters it must fan out to,
-            because each Small cluster has the least capacity to absorb
-            concurrency. Adaptive instead pools the queries into shared compute
-            and bursts via the <strong>QTM</strong> dial: higher QTM means more
-            parallel compute (faster) at more credits.
+            here capped at four clusters and billed per active cluster.
+            Adaptive instead pools the queries into shared compute and bursts
+            via the <strong>QTM</strong> dial: a higher QTM buys more parallel
+            compute, and more credits. The idle-tail toggle moves only Gen1:
+            dropping the warehouse the instant the burst ends ("no idle tail")
+            trims its bill by roughly $0.10 to $0.20 per size; Adaptive has no
+            idle concept and is unaffected.
           </P>
           <P>
-            At <strong>QTM=2</strong>, Adaptive is cheaper at every single size
-            at matched speed; Small costs $0.25 against Gen1's $0.53, a clean
-            halving. Push to <strong>QTM=8</strong> and it gets faster still;
-            Small and Medium become the sweet spot (Medium: 80s and $0.21,
-            faster <em>and</em> roughly a third of Gen1's cost). But at Large
-            and XLarge, QTM=8 overshoots: the burst buys little extra speed and
-            cost sails past Gen1 ($1.53 vs $1.08 at XLarge).
+            At <strong>QTM=2</strong> Adaptive clears the burst faster than
+            Gen1 at every size. On cost it is mixed: Adaptive is cheaper at
+            the small end (XSmall $0.17 vs $0.23, Small $0.23 vs $0.34) and
+            again at XLarge ($0.83 vs $1.26), while Gen1's multi-cluster model
+            is the cheaper way through the middle (Medium $0.39 vs $0.54,
+            Large $0.69 vs $0.84). Pushing to <strong>QTM=8</strong> is faster
+            still, but you pay for it: it runs above Gen1 at most sizes
+            (Medium $0.81 vs $0.39, XLarge $1.89 vs $1.26) and only draws
+            level at Small. QTM=8 earns its keep only when latency clearly
+            outranks the bill.
           </P>
           <ChartBlock
             rows={get("concurrent_qtm2")}
-            caption="22 concurrent queries · Adaptive QTM=2 vs Gen1 multi-cluster (max 4)."
+            domainRows={getDomain("concurrent_qtm2")}
+            caption="22 concurrent queries, Adaptive QTM=2 vs Gen1 multi-cluster (max 4)."
           />
           <ChartBlock
             rows={get("concurrent_qtm8")}
-            caption="Same workload · Adaptive QTM=8: more burst, faster, but cost climbs at the big sizes."
+            domainRows={getDomain("concurrent_qtm8")}
+            caption="Same workload, Adaptive QTM=8: faster than QTM=2, but above Gen1 on cost at most sizes."
           />
           <Takeaway>
-            Under real concurrency Adaptive wins decisively on cost. Keep the
-            size small and let QTM do the scaling; small/medium at a high QTM
-            beats Gen1 multi-cluster on both speed and dollars. Reserve large
-            sizes + high QTM for when latency truly outranks the bill.
+            For concurrency, Adaptive is the faster engine at every size. The
+            catch is the QTM dial. Pushing from QTM=2 to QTM=8 buys only a few
+            seconds (Medium 84s to 81s, XLarge 73s to 71s) while the bill
+            roughly doubles (Medium $0.54 to $0.81, XLarge $0.83 to $1.89). We
+            set QTM too high for this workload: Snowflake did not need that
+            headroom to clear the burst, but it still charged us for reserving
+            it. Set a high QTM only when you need it.
           </Takeaway>
         </Section>
 
@@ -635,27 +660,52 @@ function App() {
             goal="A delete + insert refresh: bursty work, then done, the shape of every ELT pipeline step."
           />
           <P>
-            A pipeline step does a chunk of work and stops. Gen1 makes you
-            commit to a size up front and pays for it whether the burst needed
-            it or not, and at Large/XLarge that idle tax is brutal: $0.27 and
-            $0.53 for work that took seconds. Adaptive sizes itself to the
-            burst: Large lands at $0.10, XLarge at $0.14, up to ~4× cheaper at
-            equal-or-better speed.
+            The job here is a realistic incremental refresh: delete one month
+            of <code>lineitem</code> and re-insert it from source, about 1% of
+            the rows in a ~600M-row table. The base table is large, but the
+            change is not. Snowflake's micro-partition pruning targets exactly
+            the partitions that month touches and skips the rest, so the engine
+            can see up front that this is a small, surgical write, not a
+            full-table rewrite. That is the key to everything below.
           </P>
           <P>
-            The lone exception is Small, where Adaptive ($0.14) trails Gen1
-            ($0.07): there's no oversized idle warehouse to reclaim, so
-            Adaptive's per-query premium has nothing to pay it back with;
-            exactly the pattern from Chapter 2.
+            Gen1 makes
+            you commit to a size up front and bills it against the minimum
+            whether the burst needed that size or not. The delete plus insert
+            finishes in seconds at Small and above, yet Gen1's price climbs
+            straight up the dial: $0.05 at XSmall, $0.08 at Small, $0.15 at
+            Medium, $0.29 at Large, $0.60 at XLarge. You are paying for the
+            warehouse, not the work.
+          </P>
+          <P>
+            Adaptive tells the opposite story, and this is the chapter where it
+            looks smartest. Notice how tightly Small, Medium, Large and XLarge
+            cluster: $0.05, $0.05, $0.07, $0.09. They even arrive in clean
+            price order, yet by XLarge the meter has barely moved off Small. A
+            delete plus insert prunes to a narrow slice of partitions, and
+            Snowflake clearly recognizes it can finish the job without throwing
+            expensive compute at it; it declines to over-provision even when
+            the size cap would let it. The bill tracks the work, not the dial.
+          </P>
+          <P>
+            The lone exception is XSmall, where Adaptive ($0.10) trails Gen1
+            ($0.05). With no oversized idle warehouse to reclaim, Adaptive's
+            per-query premium has nothing to pay it back, exactly the pattern
+            from Chapter 2.
           </P>
           <ChartBlock
             rows={get("dml_qtm2")}
+            domainRows={getDomain("dml_qtm2")}
             caption="Delete + insert refresh on lineitem. Adaptive at QTM=2."
           />
           <Takeaway>
-            For bursty pipeline writes, Adaptive removes the "guess the size"
-            tax; sizing up is nearly free, so you stop paying for an oversized
-            warehouse that idles the moment the batch finishes.
+            This is Adaptive at its smartest. It reads the shape of the work,
+            a tightly pruned 1% write against a huge table, and deliberately
+            stays small instead of cashing in the size cap you handed it. Even
+            when you point it at XLarge, it spends like a Small because that is
+            all the job needs, so the bill tracks the resources used, not the
+            dial you set. For incremental pipelines, this is exactly the behavior
+            you want, and it removes the "guess the size" tax entirely.
           </Takeaway>
         </Section>
 
@@ -666,14 +716,25 @@ function App() {
             title="When to reach for which warehouse"
             goal="One pattern explains every chapter above."
           />
+
           <P>
-            Adaptive wins wherever a Gen1 warehouse would otherwise sit partly
-            idle: concurrency spikes, bursty pipelines, big sizes you only
-            need for seconds. Even on a continuously saturated warehouse it
-            stays the faster engine, and the cost gap turns in its favor as
-            soon as you move past the smallest size. Gen1's remaining edge is
-            narrow: the very smallest, steadily busy warehouse, where its flat
-            rate undercuts Adaptive's per-query premium.
+            One behavior runs underneath every chapter and is worth stating
+            plainly: Snowflake never trades speed for savings on its own. It
+            optimizes for the fastest answer it can return, and it will reach
+            for the full ceiling you give it to get there; the size cap in
+            Chapter 1, the QTM headroom in Chapter 3. Over-reserving QTM bought no measurable speedup yet still
+            showed up on the bill. The one exception is the DML refresh, where
+            efficient pruning lets it stay small because the work itself is
+            small, not because it chose to economize.
+          </P>
+          <P>
+            The takeaway is not that
+            Adaptive is reckless, it is that the dials are still yours and you need to turn them: it will
+            spend up to whatever cap you set, so set the cap to the job.
+            Adaptive's pitch was that you stop thinking about sizing; in
+            practice this benchmark shows you still have to pick a size, the
+            difference is that the size is now a ceiling on spend rather than a
+            fixed reservation.
           </P>
           <div
             style={{
@@ -684,10 +745,10 @@ function App() {
             }}
           >
             {[
-              ["One-off query", "Gen1 Small, the $0.07 floor. Or Adaptive if you want big-warehouse speed without the size tax."],
-              ["Continuous single user", "Close call. Adaptive is faster at every size; Gen1 wins on cost only at Small. From Medium up, Adaptive is both faster and cheaper."],
-              ["Concurrency / BI", "Adaptive, small size, QTM as the dial. Cheaper and faster than Gen1 multi-cluster."],
-              ["Pipeline writes", "Adaptive at Large/XLarge: sizing up is nearly free; no idle tax after the batch."],
+              ["One-off query", "The XS Adaptive does very well! Adaptive does tend to be a premium."],
+              ["Continuous single user", "Gen1 is the value pick: comparable speed and cheaper from XSmall through Large. Go Adaptive only for the speed jump at the smallest size or the cost saving at XLarge."],
+              ["Concurrency / BI", "Adaptive is faster at every size; cheaper at the small sizes and at XLarge. Gen1 multi-cluster is the cheaper pick through Medium and Large."],
+              ["Incremental writes", "Adaptive at Large/XLarge: sizing up is nearly free due to efficient pruning; no idle tax after the batch."],
             ].map(([h, b]) => (
               <div
                 key={h}

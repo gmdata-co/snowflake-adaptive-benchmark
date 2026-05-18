@@ -1,16 +1,6 @@
 # Benchmark Visualization
 
-React dashboard for visualizing Snowflake vs Databricks benchmark results.
-
-## Update Data
-
-After running benchmarks, update the visualization data by exporting from DuckDB:
-
-```bash
-uv run visualization/update_data.py
-```
-
-This queries the `run_summary` view and exports to `src/data/benchmarkData.json`.
+React dashboard for the Snowflake Adaptive vs Gen1 benchmark report.
 
 ## Local Development
 
@@ -28,39 +18,28 @@ Open http://localhost:5173 in your browser.
 npm run build
 ```
 
-Output is in the `dist/` folder.
+Output is written to `dist/`.
 
-## Deploy to Google Cloud Run
+## Deploy
 
-### Prerequisites
+The site is hosted as static files on a Google Cloud Storage bucket and
+served directly over HTTPS.
 
-1. Authenticate and find your project:
-   ```bash
-   gcloud auth login
-   gcloud projects list  # find your project ID
-   ```
+**Live URL:** https://storage.googleapis.com/adaptive-benchmark/index.html
 
-2. Set your GCP project:
-   ```bash
-   export GCP_PROJECT=your-project-id
-   gcloud config set project $GCP_PROJECT
-   ```
-
-3. Verify you're in the right project:
-   ```bash
-   gcloud config get-value project
-   ```
-
-### Deploy
-
-From the `visualization/` directory:
+From the `visualization/` directory, after a production build:
 
 ```bash
-gcloud run deploy benchmark-viz \
-  --project $GCP_PROJECT \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated
+gcloud storage rsync dist gs://adaptive-benchmark \
+  --recursive \
+  --delete-unmatched-destination-objects
 ```
 
-This builds the Docker image and deploys it in one step.
+`--delete-unmatched-destination-objects` clears old hashed JS/CSS bundles so
+the bucket only ever holds the current build. The bucket already has
+`allUsers` granted `roles/storage.objectViewer`, so no per-deploy ACL changes
+are needed.
+
+> Deploying requires write access to the `adaptive-benchmark` bucket via your
+> own authenticated `gcloud` account and its project. Run `gcloud auth login`
+> and set the project before your first deploy.

@@ -1,8 +1,8 @@
 """
 DuckDB storage layer for benchmark results.
 
-This module provides thread-safe DuckDB storage for benchmark results from both
-Snowflake and Databricks benchmarks.
+This module provides thread-safe DuckDB storage for Snowflake
+adaptive-vs-gen1 benchmark results.
 """
 
 import os
@@ -63,7 +63,6 @@ class BenchmarkStorage:
 
     Creates and manages:
     - snowflake_results table for Snowflake benchmark data
-    - databricks_results table for Databricks benchmark data
 
     Note: Views for latest runs and comparisons are managed via SQL files
     in common/transformations/ - run common/run_transformations.sh to create them.
@@ -169,34 +168,6 @@ class BenchmarkStorage:
                 )
             """)
 
-            # Create databricks_results table (same schema as snowflake_results)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS databricks_results (
-                    run_id VARCHAR NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    platform VARCHAR NOT NULL,
-                    scenario VARCHAR NOT NULL,
-                    warehouse_name VARCHAR NOT NULL,
-                    warehouse_size VARCHAR NOT NULL,
-                    query_num INTEGER NOT NULL,
-                    run_num INTEGER NOT NULL,
-                    run_type VARCHAR NOT NULL,
-                    query_tag VARCHAR,
-                    query_id VARCHAR,
-                    execution_time_sec DOUBLE,
-                    rows_produced BIGINT,
-                    error_message VARCHAR,
-                    ctas_variant VARCHAR,
-                    -- Enriched columns (populated later if needed)
-                    compilation_time_ms DOUBLE,
-                    queued_time_ms DOUBLE,
-                    bytes_scanned BIGINT,
-                    credits_used_compute DOUBLE,
-                    credits_used_cloud_services DOUBLE,
-                    total_elapsed_time_ms DOUBLE
-                )
-            """)
-
             # Create run_metadata table to track wall clock time per
             # platform/warehouse-type/size combination. qtm is recorded but
             # NOT part of the PK (gen1 has qtm=NULL, and PK columns must be
@@ -268,44 +239,6 @@ class BenchmarkStorage:
 
         self._execute_with_lock_retry("write Snowflake result", _write_operation)
 
-    def write_databricks_result(self, result: Dict[str, Any]):
-        """
-        Write a single Databricks benchmark result to the database.
-
-        Args:
-            result: Dictionary containing benchmark result data with keys matching
-                   the databricks_results table schema (run_id, timestamp, platform, etc.)
-        """
-        def _write_operation(conn):
-            # Insert the result
-            conn.execute("""
-                INSERT INTO databricks_results (
-                    run_id, timestamp, platform, scenario,
-                    warehouse_name, warehouse_size, query_num, run_num,
-                    run_type, query_tag, query_id, execution_time_sec,
-                    rows_produced, error_message, ctas_variant
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                result.get("run_id"),
-                result.get("timestamp"),
-                result.get("platform"),
-                result.get("scenario"),
-                result.get("warehouse_name"),
-                result.get("warehouse_size"),
-                result.get("query_num"),
-                result.get("run_num"),
-                result.get("run_type"),
-                result.get("query_tag"),
-                result.get("query_id"),
-                result.get("execution_time_sec"),
-                result.get("rows_produced"),
-                result.get("error_message"),
-                result.get("ctas_variant", None),
-            ])
-            return None
-
-        self._execute_with_lock_retry("write Databricks result", _write_operation)
-
     def get_latest_run_id(self) -> Optional[str]:
         """
         Get the run_id of the most recent benchmark run.
@@ -372,69 +305,15 @@ class BenchmarkStorage:
 
         self._execute_with_lock_retry("update Snowflake enrichment data", _update_operation)
 
-    def update_databricks_enrichment_data(
-        self,
-        query_id: str,
-        compilation_time_ms: Optional[float] = None,
-        queued_time_ms: Optional[float] = None,
-        bytes_scanned: Optional[int] = None,
-        credits_used_compute: Optional[float] = None,
-        credits_used_cloud_services: Optional[float] = None,
-        total_elapsed_time_ms: Optional[float] = None,
-        rows_produced: Optional[int] = None,
-    ):
-        """
-        Update enrichment data for a specific Databricks query.
-
-        This is called by databricks/enrich_results.py to add system table data.
-
-        Args:
-            query_id: Databricks statement ID to update
-            compilation_time_ms: Query compilation time
-            queued_time_ms: Time spent queued
-            bytes_scanned: Total bytes scanned
-            credits_used_compute: DBU credits used (approximate)
-            credits_used_cloud_services: Cloud services credits used (if applicable)
-            total_elapsed_time_ms: Total elapsed time from system tables
-            rows_produced: Number of rows produced by the query (from system.query.history)
-        """
-        def _update_operation(conn):
-            conn.execute("""
-                UPDATE databricks_results
-                SET
-                    compilation_time_ms = ?,
-                    queued_time_ms = ?,
-                    bytes_scanned = ?,
-                    credits_used_compute = ?,
-                    credits_used_cloud_services = ?,
-                    total_elapsed_time_ms = ?,
-                    rows_produced = ?
-                WHERE query_id = ?
-            """, [
-                compilation_time_ms,
-                queued_time_ms,
-                bytes_scanned,
-                credits_used_compute,
-                credits_used_cloud_services,
-                total_elapsed_time_ms,
-                rows_produced,
-                query_id,
-            ])
-            return None
-
-        self._execute_with_lock_retry("update Databricks enrichment data", _update_operation)
-
     def get_next_run_id(self) -> str:
         """
-        Get the next sequential run ID by reading existing data from both platforms.
-
-        This ensures that Snowflake and Databricks use synchronized run IDs.
+        Get the next sequential run ID by reading existing data.
 
         Returns:
             Zero-padded 3-digit run ID (e.g., "001", "002", "003")
         """
         def _get_next_run_id_operation(conn):
-            # Query for max run_id from both tables
+            # Query for max run_id
             max_ids = []
 
             # Check snowflake_results
@@ -445,15 +324,6 @@ class BenchmarkStorage:
             """).fetchone()
             if result_sf and result_sf[0] is not None:
                 max_ids.append(result_sf[0])
-
-            # Check databricks_results
-            result_dbx = conn.execute("""
-                SELECT MAX(CAST(run_id AS INTEGER)) as max_id
-                FROM databricks_results
-                WHERE run_id ~ '^[0-9]+$'
-            """).fetchone()
-            if result_dbx and result_dbx[0] is not None:
-                max_ids.append(result_dbx[0])
 
             # Per-track namespacing: when 3 tracks run concurrently they each
             # have their OWN duckdb file, so each would otherwise start at 001

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Snowflake vs Databricks Benchmarking Project Setup
+-- Snowflake Adaptive-vs-Gen1 Benchmarking Project Setup
 -- ============================================================================
 -- This script sets up the role, database, and warehouses for TPC-H SF1000
 -- benchmarking according to the project plan requirements.
@@ -34,7 +34,7 @@ USE ROLE SYSADMIN;
 
 -- Create the benchmark database
 CREATE DATABASE IF NOT EXISTS BENCHMARK
-    COMMENT = 'Database for Snowflake vs Databricks TPC-H SF1000 benchmarking';
+    COMMENT = 'Database for Snowflake adaptive-vs-gen1 TPC-H SF1000 benchmarking';
 
 -- Grant all privileges on database to BENCHMARK role
 GRANT ALL ON DATABASE BENCHMARK TO ROLE BENCHMARK;

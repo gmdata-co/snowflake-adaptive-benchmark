@@ -7,8 +7,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        snowflake: '#29B5E8',
-        databricks: '#FF3621',
+        gen1: '#29B5E8',
+        adaptive: '#F59E0B',
         dark: {
           900: '#0f172a',
           800: '#1e293b',

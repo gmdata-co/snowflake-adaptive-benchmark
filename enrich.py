@@ -5,9 +5,6 @@ Enrich Benchmark Results
 Orchestrates the enrichment workflow by calling enrichment scripts in order:
 1. Snowflake results enrichment (from ACCOUNT_USAGE.QUERY_HISTORY)
 2. Snowflake warehouse usage loading (from ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY)
-3. Databricks warehouse usage loading (from system.billing.usage)
-
-Note: Databricks results enrichment is skipped as it's currently not working correctly.
 """
 
 import sys
@@ -63,9 +60,8 @@ def main():
     logger.info("\nThis script will enrich benchmark results with:")
     logger.info("  1. Snowflake query metrics from ACCOUNT_USAGE")
     logger.info("  2. Snowflake warehouse usage data")
-    logger.info("  3. Databricks warehouse usage data")
-    logger.info("\nNOTE: Run this at least 45 minutes (Snowflake) to 2 hours (Databricks)")
-    logger.info("      after benchmark completion to ensure system tables are populated.")
+    logger.info("\nNOTE: Run this at least 45 minutes after benchmark completion")
+    logger.info("      to ensure ACCOUNT_USAGE system tables are populated.")
     logger.info("=" * 80 + "\n")
 
     project_root = Path(__file__).parent
@@ -79,10 +75,6 @@ def main():
         {
             "path": project_root / "snowflake" / "load_warehouse_usage.py",
             "description": "Snowflake Warehouse Usage Loading",
-        },
-        {
-            "path": project_root / "databricks" / "load_warehouse_usage.py",
-            "description": "Databricks Warehouse Usage Loading",
         },
     ]
 

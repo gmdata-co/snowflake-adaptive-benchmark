@@ -4,8 +4,7 @@ Automated setup script to generate .env configuration file.
 
 This script will:
 1. Prompt for Snowflake configuration
-2. Discover Databricks SQL warehouses and catalogs
-3. Generate a configured .env file
+2. Generate a configured .env file
 """
 
 import sys
@@ -167,132 +166,7 @@ def get_snowflake_config():
     }
 
 
-def get_databricks_config():
-    """Prompt for Databricks credentials and discover warehouses."""
-    print_header("DATABRICKS CONFIGURATION")
-
-    host = input(
-        "Enter Databricks workspace URL (e.g., https://dbc-xxx.cloud.databricks.com): "
-    ).strip()
-    if not host:
-        print("❌ Databricks host is required!")
-        return None
-
-    token = input("Enter Databricks personal access token (dapi_...): ").strip()
-    if not token:
-        print("❌ Databricks token is required!")
-        return None
-
-    # Test connection and discover resources
-    print("\n🔍 Connecting to Databricks and discovering resources...")
-    try:
-        from databricks.sdk import WorkspaceClient
-        from databricks.sdk.core import Config
-
-        config = Config(host=host, token=token)
-        client = WorkspaceClient(config=config)
-
-        # Test connection
-        user = client.current_user.me()
-        print(f"✅ Connected as: {user.user_name}\n")
-
-        # Get catalogs and schemas (warehouses are now created dynamically)
-        print("\n📚 Discovering catalogs...")
-        catalogs = list(client.catalogs.list())
-        if not catalogs:
-            print("⚠️  No catalogs found. Using 'main'")
-            catalog = "main"
-        else:
-            print("  Available catalogs:")
-            catalog_map = {}
-            for i, cat in enumerate(catalogs, 1):
-                print(f"    {i}. {cat.name}")
-                catalog_map[str(i)] = cat.name
-
-            choice = (
-                input("  Select catalog (number, default 1): ").strip().lower() or "1"
-            )
-            catalog = catalog_map.get(choice, catalogs[0].name)
-            print(f"  ✅ Selected: {catalog}")
-
-        # Get schemas for selected catalog
-        print(f"\n📚 Discovering schemas in catalog '{catalog}'...")
-        try:
-            schemas = list(client.schemas.list(catalog_name=catalog))
-            if schemas:
-                print("  Available schemas:")
-                schema_map = {}
-                for i, sch in enumerate(schemas, 1):
-                    print(f"    {i}. {sch.name}")
-                    schema_map[str(i)] = sch.name
-
-                choice = (
-                    input("  Select schema (number, default 1): ").strip().lower()
-                    or "1"
-                )
-                schema = schema_map.get(choice, schemas[0].name)
-                print(f"  ✅ Selected: {schema}")
-            else:
-                schema = input("  Enter schema name (default: benchmark): ").strip()
-                schema = schema or "benchmark"
-        except Exception as e:
-            print(f"  Could not list schemas: {e}")
-            schema = input("  Enter schema name (default: benchmark): ").strip()
-            schema = schema or "benchmark"
-
-        # Get admin warehouse for metadata queries (not used for benchmarking)
-        print("\n🏭 Discovering SQL warehouses for admin tasks...")
-        print("  (This warehouse will only be used for cost/metadata queries, NOT benchmarking)")
-        try:
-            warehouses = list(client.warehouses.list())
-            if warehouses:
-                print("\n  Available warehouses:")
-                warehouse_map = {}
-                for i, wh in enumerate(warehouses, 1):
-                    # Show warehouse name and size
-                    size = getattr(wh, 'warehouse_size', 'Unknown')
-                    state = getattr(wh, 'state', 'Unknown')
-                    print(f"    {i}. {wh.name} (Size: {size}, State: {state})")
-                    warehouse_map[str(i)] = wh.id
-
-                choice = (
-                    input("\n  Select admin warehouse (number, smallest recommended): ").strip()
-                    or "1"
-                )
-                admin_warehouse_id = warehouse_map.get(choice, warehouses[0].id)
-                selected_wh = next((wh for wh in warehouses if wh.id == admin_warehouse_id), warehouses[0])
-                print(f"  ✅ Selected: {selected_wh.name} (ID: {admin_warehouse_id})")
-            else:
-                print("  ⚠️  No warehouses found!")
-                admin_warehouse_id = input("  Enter warehouse ID manually: ").strip()
-                if not admin_warehouse_id:
-                    print("  ❌ Admin warehouse ID is required for metadata queries")
-                    return None
-        except Exception as e:
-            print(f"  Could not list warehouses: {e}")
-            admin_warehouse_id = input("  Enter admin warehouse ID manually: ").strip()
-            if not admin_warehouse_id:
-                print("  ❌ Admin warehouse ID is required for metadata queries")
-                return None
-
-        return {
-            "host": host,
-            "token": token,
-            "catalog": catalog,
-            "schema": schema,
-            "admin_warehouse_id": admin_warehouse_id,
-        }
-
-    except ImportError:
-        print("❌ Databricks SDK not found. Run: uv add databricks-sdk")
-        return None
-    except Exception as e:
-        print(f"❌ Connection failed: {e}")
-        print("   Check your host URL and token, then try again.")
-        return None
-
-
-def generate_env_file(snowflake_config, databricks_config):
+def generate_env_file(snowflake_config):
     """Generate .env file from collected configuration."""
     env_content = f"""# ============================================
 # SNOWFLAKE CONFIGURATION
@@ -303,20 +177,6 @@ export SNOWFLAKE_ROLE={snowflake_config['role']}
 export SNOWFLAKE_DATABASE={snowflake_config['database']}
 export SNOWFLAKE_SCHEMA={snowflake_config['schema']}
 export SNOWFLAKE_WAREHOUSE_PREFIX={snowflake_config['warehouse_prefix']}
-
-# ============================================
-# DATABRICKS CONFIGURATION
-# ============================================
-
-export DATABRICKS_HOST={databricks_config['host']}
-export DATABRICKS_TOKEN={databricks_config['token']}
-export DATABRICKS_CATALOG={databricks_config['catalog']}
-export DATABRICKS_SCHEMA={databricks_config['schema']}
-
-# Admin warehouse - used only for metadata/cost queries (enrich.py), NOT for benchmarking
-export DATABRICKS_ADMIN_WAREHOUSE={databricks_config['admin_warehouse_id']}
-
-# Note: Benchmark SQL warehouses are created and destroyed automatically during benchmark runs
 """
 
     env_path = Path(".env")
@@ -331,19 +191,13 @@ export DATABRICKS_ADMIN_WAREHOUSE={databricks_config['admin_warehouse_id']}
     print(f"  Schema: {snowflake_config['schema']}")
     print(f"  Role: {snowflake_config['role']}")
     print(f"  Warehouse prefix: {snowflake_config['warehouse_prefix']}")
-    print("\nDatabricks:")
-    print(f"  Host: {databricks_config['host']}")
-    print(f"  Catalog: {databricks_config['catalog']}")
-    print(f"  Schema: {databricks_config['schema']}")
-    print(f"  Admin warehouse: {databricks_config['admin_warehouse_id']} (for metadata queries only)")
-    print("  Benchmark warehouses: Created dynamically during runs")
     print()
     print("You're all set! Run: uv run main.py")
 
 
 def main():
     """Main setup flow."""
-    print_header("SNOWFLAKE vs DATABRICKS BENCHMARK - SETUP")
+    print_header("SNOWFLAKE ADAPTIVE-VS-GEN1 BENCHMARK - SETUP")
 
     if not check_env_exists():
         return
@@ -353,13 +207,8 @@ def main():
     if not snowflake_config:
         sys.exit(1)
 
-    # Get Databricks config
-    databricks_config = get_databricks_config()
-    if not databricks_config:
-        sys.exit(1)
-
     # Generate .env file
-    generate_env_file(snowflake_config, databricks_config)
+    generate_env_file(snowflake_config)
 
 
 if __name__ == "__main__":

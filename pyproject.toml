@@ -1,14 +1,11 @@
 [project]
-name = "snowflake-v-databricks"
+name = "snowflake-adaptive-benchmark"
 version = "0.1.0"
-description = "Add your description here"
+description = "Snowflake Adaptive vs Gen1 warehouse TPC-H benchmark"
 requires-python = ">=3.11"
 dependencies = [
     "colorlog>=6.10.1",
     "cryptography>=46.0.3",
-    "databricks-cli>=0.18.0",
-    "databricks-sdk>=0.73.0",
-    "databricks-sql-connector>=3.0.1",
     "dbt-duckdb>=1.10.0",
     "duckdb>=1.4.1",
     "matplotlib>=3.10.7",

@@ -34,7 +34,7 @@ import duckdb  # noqa: E402
 logger = get_logger(__name__)
 
 CANONICAL = project_root / "benchmark_results.duckdb"
-TABLES = ("snowflake_results", "databricks_results", "run_metadata")
+TABLES = ("snowflake_results", "run_metadata")
 
 
 def merge(track_paths):

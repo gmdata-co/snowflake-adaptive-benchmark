@@ -1,1 +1,1 @@
-"""Common shared code for Snowflake and Databricks benchmarks."""
+"""Common shared code for the Snowflake adaptive-vs-gen1 benchmark."""

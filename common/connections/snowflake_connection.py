@@ -143,10 +143,11 @@ class SnowflakeConnection(BaseConnection):
         # Connect to Snowflake
         self.connection = snowflake.connector.connect(**connect_params)
 
-        # Disable result caching to ensure accurate benchmarking
-        cursor = self.connection.cursor()
-        cursor.execute("ALTER SESSION SET USE_CACHED_RESULT = FALSE")
-        cursor.close()
+        # Result caching is disabled at the USER level
+        # (ALTER USER ... SET USE_CACHED_RESULT = FALSE), so every session
+        # inherits FALSE without a per-connection ALTER SESSION. This removed
+        # the per-connection statement flood in the concurrent scenario
+        # (one connection per query).
 
         logger.info("✅ Connected to Snowflake")
         logger.info(f"✅ Using role: {self.role}")

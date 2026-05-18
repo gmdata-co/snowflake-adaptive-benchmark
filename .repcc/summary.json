@@ -1,0 +1,320 @@
+{
+  "n_reps": 5,
+  "cells": {
+    "gen1|MEDIUM|-1": {
+      "warehouse_type": "gen1",
+      "warehouse_size": "MEDIUM",
+      "qtm": null,
+      "time": {
+        "n": 5,
+        "median": 97.224,
+        "mean": 97.447,
+        "min": 93.636,
+        "max": 100.392,
+        "stdev": 2.246
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.4,
+        "mean": 0.4,
+        "min": 0.389,
+        "max": 0.414,
+        "stdev": 0.008
+      }
+    },
+    "gen1|XSMALL|-1": {
+      "warehouse_type": "gen1",
+      "warehouse_size": "XSMALL",
+      "qtm": null,
+      "time": {
+        "n": 5,
+        "median": 135.374,
+        "mean": 134.064,
+        "min": 130.061,
+        "max": 138.822,
+        "stdev": 3.342
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.225,
+        "mean": 0.226,
+        "min": 0.221,
+        "max": 0.234,
+        "stdev": 0.004
+      }
+    },
+    "gen1|LARGE|-1": {
+      "warehouse_type": "gen1",
+      "warehouse_size": "LARGE",
+      "qtm": null,
+      "time": {
+        "n": 5,
+        "median": 86.451,
+        "mean": 86.788,
+        "min": 84.856,
+        "max": 88.802,
+        "stdev": 1.401
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.699,
+        "mean": 0.701,
+        "min": 0.684,
+        "max": 0.726,
+        "stdev": 0.014
+      }
+    },
+    "gen1|XLARGE|-1": {
+      "warehouse_type": "gen1",
+      "warehouse_size": "XLARGE",
+      "qtm": null,
+      "time": {
+        "n": 5,
+        "median": 79.714,
+        "mean": 81.21,
+        "min": 78.025,
+        "max": 85.102,
+        "stdev": 3.018
+      },
+      "cost": {
+        "n": 5,
+        "median": 1.265,
+        "mean": 1.284,
+        "min": 1.257,
+        "max": 1.318,
+        "stdev": 0.028
+      }
+    },
+    "adaptive|XSMALL|8": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "XSMALL",
+      "qtm": 8,
+      "time": {
+        "n": 5,
+        "median": 103.467,
+        "mean": 104.692,
+        "min": 100.407,
+        "max": 109.371,
+        "stdev": 3.176
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.254,
+        "mean": 0.271,
+        "min": 0.242,
+        "max": 0.312,
+        "stdev": 0.028
+      }
+    },
+    "gen1|SMALL|-1": {
+      "warehouse_type": "gen1",
+      "warehouse_size": "SMALL",
+      "qtm": null,
+      "time": {
+        "n": 5,
+        "median": 108.889,
+        "mean": 115.067,
+        "min": 106.763,
+        "max": 133.107,
+        "stdev": 9.945
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.327,
+        "mean": 0.32,
+        "min": 0.274,
+        "max": 0.348,
+        "stdev": 0.025
+      }
+    },
+    "adaptive|SMALL|2": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "SMALL",
+      "qtm": 2,
+      "time": {
+        "n": 5,
+        "median": 111.977,
+        "mean": 112.547,
+        "min": 109.583,
+        "max": 115.352,
+        "stdev": 1.998
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.235,
+        "mean": 0.241,
+        "min": 0.184,
+        "max": 0.326,
+        "stdev": 0.047
+      }
+    },
+    "adaptive|MEDIUM|8": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "MEDIUM",
+      "qtm": 8,
+      "time": {
+        "n": 5,
+        "median": 81.229,
+        "mean": 81.191,
+        "min": 80.373,
+        "max": 81.785,
+        "stdev": 0.492
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.615,
+        "mean": 0.574,
+        "min": 0.249,
+        "max": 0.735,
+        "stdev": 0.176
+      }
+    },
+    "adaptive|XLARGE|8": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "XLARGE",
+      "qtm": 8,
+      "time": {
+        "n": 5,
+        "median": 74.303,
+        "mean": 74.223,
+        "min": 72.02,
+        "max": 76.002,
+        "stdev": 1.338
+      },
+      "cost": {
+        "n": 5,
+        "median": 1.45,
+        "mean": 1.542,
+        "min": 1.251,
+        "max": 1.965,
+        "stdev": 0.25
+      }
+    },
+    "adaptive|MEDIUM|2": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "MEDIUM",
+      "qtm": 2,
+      "time": {
+        "n": 5,
+        "median": 87.163,
+        "mean": 91.24,
+        "min": 84.323,
+        "max": 110.732,
+        "stdev": 9.808
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.349,
+        "mean": 0.396,
+        "min": 0.258,
+        "max": 0.591,
+        "stdev": 0.113
+      }
+    },
+    "adaptive|SMALL|8": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "SMALL",
+      "qtm": 8,
+      "time": {
+        "n": 5,
+        "median": 96.52,
+        "mean": 99.956,
+        "min": 95.702,
+        "max": 110.795,
+        "stdev": 5.725
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.325,
+        "mean": 0.303,
+        "min": 0.238,
+        "max": 0.33,
+        "stdev": 0.035
+      }
+    },
+    "adaptive|LARGE|8": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "LARGE",
+      "qtm": 8,
+      "time": {
+        "n": 5,
+        "median": 80.849,
+        "mean": 80.508,
+        "min": 73.833,
+        "max": 86.487,
+        "stdev": 5.171
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.948,
+        "mean": 0.947,
+        "min": 0.62,
+        "max": 1.318,
+        "stdev": 0.227
+      }
+    },
+    "adaptive|LARGE|2": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "LARGE",
+      "qtm": 2,
+      "time": {
+        "n": 5,
+        "median": 79.746,
+        "mean": 80.024,
+        "min": 77.085,
+        "max": 82.105,
+        "stdev": 1.767
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.61,
+        "mean": 0.738,
+        "min": 0.43,
+        "max": 1.212,
+        "stdev": 0.288
+      }
+    },
+    "adaptive|XSMALL|2": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "XSMALL",
+      "qtm": 2,
+      "time": {
+        "n": 5,
+        "median": 111.663,
+        "mean": 114.32,
+        "min": 107.123,
+        "max": 121.775,
+        "stdev": 5.85
+      },
+      "cost": {
+        "n": 5,
+        "median": 0.215,
+        "mean": 0.19,
+        "min": 0.127,
+        "max": 0.219,
+        "stdev": 0.036
+      }
+    },
+    "adaptive|XLARGE|2": {
+      "warehouse_type": "adaptive",
+      "warehouse_size": "XLARGE",
+      "qtm": 2,
+      "time": {
+        "n": 5,
+        "median": 80.646,
+        "mean": 79.607,
+        "min": 74.377,
+        "max": 84.824,
+        "stdev": 4.36
+      },
+      "cost": {
+        "n": 5,
+        "median": 1.36,
+        "mean": 1.554,
+        "min": 1.181,
+        "max": 2.419,
+        "stdev": 0.452
+      }
+    }
+  }
+}

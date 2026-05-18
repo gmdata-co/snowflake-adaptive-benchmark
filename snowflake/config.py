@@ -109,7 +109,7 @@ DUCKDB_PATH = Path(
 CSV_COLUMNS = [
     "run_id",  # UUID for the entire benchmark run session
     "timestamp",  # ISO 8601 timestamp when query was submitted
-    "platform",  # "snowflake" (for future comparison with databricks)
+    "platform",  # "snowflake"
     "scenario",  # "sequential", "concurrent", "dml"
     "warehouse_type",  # "gen1" or "adaptive"
     "warehouse_name",  # e.g., "BENCHMARK_WH_ADAPTIVE_MEDIUM_SEQUENTIAL_QTM2_<RUN_ID>"
