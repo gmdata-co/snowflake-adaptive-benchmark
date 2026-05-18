@@ -1,8 +1,7 @@
 .venv/
 *.pyc
-snowflake/__pycache__/*
+**/__pycache__/
 snowflake/results/backups/*
-__pycache__/*
 logs/
 snowflake/export/gcs-service-account-key.json
 .env
