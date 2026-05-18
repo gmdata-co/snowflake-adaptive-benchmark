@@ -1,0 +1,13 @@
+Run 9002 (gen1, concurrent, idle_policy=immediate_drop) DELETED 2026-05-17.
+
+WHY: run_concurrent_benchmark created all warehouses up front and dropped them
+ALL only in the outer finally (after XL). Every gen1 warehouse therefore
+auto-suspended on its own (~60s idle tail billed) before the end-batch drop, so
+BENCHMARK_IMMEDIATE_DROP was a NO-OP for the concurrent scenario: run 9002
+"no idle tail" actually got a tail. wait_for_suspend (run 9001) is unaffected
+(it is SUPPOSED to bill the tail, and did) so 9001 is kept. Adaptive 9003/9004
+are idle-policy-invariant (n_a) and unaffected, kept.
+
+benchmark.py was fixed to drop each warehouse per-size honoring the policy.
+gen1 immediate_drop concurrent was re-run under the fix as a new run_id
+(9005) which supersedes deleted 9002.

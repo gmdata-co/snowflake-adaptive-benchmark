@@ -470,8 +470,28 @@ class SnowflakeBenchmark:
                     f"\n[{warehouse_size.upper()}] ✅ Completed CONCURRENT benchmark on {warehouse_name}"
                 )
 
+                # Drop THIS size's warehouse NOW, honoring the idle policy.
+                # Previously every warehouse was dropped together only in the
+                # outer finally, by which time each had already auto-suspended
+                # on its own (~60s idle tail billed) - which made
+                # BENCHMARK_IMMEDIATE_DROP a no-op for the concurrent scenario
+                # (immediate_drop still got a tail). Dropping per size means
+                # immediate_drop actually skips the tail and wait_for_suspend
+                # deliberately waits for AUTO_SUSPEND and bills it.
+                try:
+                    self.warehouse_manager.destroy_warehouse(warehouse_name)
+                    if warehouse_name in self.warehouse_manager.created_warehouses:
+                        self.warehouse_manager.created_warehouses.remove(
+                            warehouse_name
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"[{warehouse_size.upper()}] per-size destroy failed: {e}"
+                    )
+
         finally:
-            # Always clean up warehouses
+            # Safety net: drop anything not already dropped per size
+            # (e.g. a size that errored out before its per-size destroy).
             self.warehouse_manager.destroy_all_warehouses()
 
         logger.info("\n" + "=" * 70)
