@@ -519,11 +519,6 @@ function App() {
             <strong>$/credit</strong> price up top (default $2) recomputes every
             chart live.
           </P>
-          <P>
-            Every chart below is the same shape: <strong>duration on the
-            x-axis, dollars on the y-axis</strong>. Bottom-left is the dream:
-            fast and cheap. Hover any point for the head-to-head.
-          </P>
         </div>
 
         {/* 1. Single query */}
@@ -574,10 +569,10 @@ function App() {
           <SectionHeading
             kicker="Chapter 2 · A continuous workload"
             title="A warehouse kept continuously busy"
-            goal="Simulate a steady, back-to-back workload that keeps a warehouse fully saturated, so you pay only for useful work, never idle."
+            goal="Simulate a steady, back-to-back workload that keeps a warehouse fully saturated."
           />
           <P>
-            Twenty-two queries run in sequence with no gaps, so the warehouse
+            Sixty-six queries run in sequence with no gaps, so the warehouse
             never goes idle. Whether that load is a scheduled job chain, a
             steady stream of requests, or an analyst working all day, the shape
             is the same: continuous work. This is the cleanest test of raw
@@ -589,7 +584,7 @@ function App() {
             holds its own. Adaptive is dramatically faster only at the
             XS size (about 8.5 minutes vs 11.4); at Small, Medium and
             Large Gen1 actually finishes a touch sooner, and at XLarge they
-            tie at roughly 186s. On cost Gen1 leads across most of the range
+            tie at roughly ~3.2 minutes. On cost Gen1 leads across most of the range
             and in aggregate.
           </P>
           <ChartBlock
@@ -721,14 +716,25 @@ function App() {
             title="When to reach for which warehouse"
             goal="One pattern explains every chapter above."
           />
+
           <P>
-            Adaptive wins wherever a Gen1 warehouse would otherwise sit partly
-            idle: concurrency spikes, bursty pipelines, big sizes you only
-            need for seconds. Even on a continuously saturated warehouse it
-            stays the faster engine, and the cost gap turns in its favor as
-            soon as you move past the smallest size. Gen1's remaining edge is
-            narrow: the very smallest, steadily busy warehouse, where its flat
-            rate undercuts Adaptive's per-query premium.
+            One behavior runs underneath every chapter and is worth stating
+            plainly: Snowflake never trades speed for savings on its own. It
+            optimizes for the fastest answer it can return, and it will reach
+            for the full ceiling you give it to get there; the size cap in
+            Chapter 1, the QTM headroom in Chapter 3. Over-reserving QTM bought no measurable speedup yet still
+            showed up on the bill. The one exception is the DML refresh, where
+            efficient pruning lets it stay small because the work itself is
+            small, not because it chose to economize.
+          </P>
+          <P>
+            The takeaway is not that
+            Adaptive is reckless, it is that the dials are still yours and you need to turn them: it will
+            spend up to whatever cap you set, so set the cap to the job.
+            Adaptive's pitch was that you stop thinking about sizing; in
+            practice this benchmark shows you still have to pick a size, the
+            difference is that the size is now a ceiling on spend rather than a
+            fixed reservation.
           </P>
           <div
             style={{
